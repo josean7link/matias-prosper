@@ -1,11 +1,12 @@
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useApp } from "@/contexts/AppContext";
 import { cn } from "@/lib/utils";
-import { EnvPill, DemoBanner } from "@/components/common";
+import Logo from "@/components/Logo";
 import {
   ChartBar, Buildings, UserCheck, ShieldCheck, Coins, Stack, Wallet,
   ArrowsLeftRight, Equals, Plugs, Key, LightningSlash, Bell, FileText,
-  UsersThree, NotePencil, Gear, SignOut, ArrowsDownUp, House, User, CurrencyDollar
+  UsersThree, NotePencil, Gear, SignOut, ArrowsDownUp, House, User,
+  CurrencyDollar, Sun, Moon, ArrowSquareOut,
 } from "@phosphor-icons/react";
 
 const backofficeNav = [
@@ -45,68 +46,86 @@ const portalNav = [
 ];
 
 export default function AppShell({ children, surface = "backoffice" }) {
-  const { user, env, switchEnv, logout } = useApp();
-  const location = useLocation();
+  const { user, env, switchEnv, theme, toggleTheme, logout } = useApp();
   const navigate = useNavigate();
   const items = surface === "portal" ? portalNav : backofficeNav;
   const otherSurface = surface === "portal" ? "backoffice" : "portal";
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white flex flex-col">
-      <DemoBanner />
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg)" }}>
+      {/* Demo banner */}
+      <div className="demo-banner px-6 py-2 flex items-center gap-3 text-xs font-mono" data-testid="demo-banner">
+        <span className="env-pill" data-env="sandbox">DEMO</span>
+        <span>This environment is populated with demo data for exploration. All records are tagged is_demo=true.</span>
+      </div>
+
       {/* Top bar */}
-      <header className="h-14 border-b border-[#1a1a1a] bg-[#080808] flex items-center justify-between px-6 z-30">
+      <header className="h-16 border-b border-[var(--border)] bg-[var(--surface)] flex items-center justify-between px-6 z-30">
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 font-display font-black text-lg" data-testid="brand-mark">
-            <div className="w-6 h-6 rounded-sm bg-[#0066FF] flex items-center justify-center text-white font-black text-xs">P</div>
-            <span>PROSPER</span>
-            <span className="text-[#555] font-light mx-2">/</span>
-            <span className="text-[#888] font-normal text-sm uppercase tracking-wider">
-              {surface === "portal" ? "Client Portal" : "Backoffice"}
-            </span>
-          </div>
+          <Logo size={26} testId="brand-mark" />
+          <span className="text-[var(--fg-subtle)] text-lg font-light">/</span>
+          <span className="text-[var(--fg-muted)] text-sm uppercase tracking-[0.15em] font-medium">
+            {surface === "portal" ? "Client Portal" : "Backoffice"}
+          </span>
         </div>
+
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 border border-[#222] rounded-sm p-0.5" data-testid="env-switcher">
+          {/* Env switcher */}
+          <div className="flex items-center p-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)]" data-testid="env-switcher">
             <button
-              className={cn("px-3 py-1 rounded-sm text-xs font-mono uppercase tracking-wider transition-colors",
-                env === "sandbox" ? "bg-[#FFAB00]/20 text-[#FFAB00]" : "text-[#888] hover:text-white")}
+              className={cn("px-3 py-1 rounded-full text-[11px] font-mono uppercase tracking-wider transition-colors",
+                env === "sandbox"
+                  ? "bg-[var(--warning)]/15 text-[var(--warning)]"
+                  : "text-[var(--fg-subtle)] hover:text-[var(--fg)]")}
               onClick={() => switchEnv("sandbox")}
               data-testid="env-switch-sandbox"
-            >
-              Sandbox
-            </button>
+            >Sandbox</button>
             <button
-              className={cn("px-3 py-1 rounded-sm text-xs font-mono uppercase tracking-wider transition-colors",
-                env === "production" ? "bg-[#00C853]/15 text-[#00C853]" : "text-[#888] hover:text-white")}
+              className={cn("px-3 py-1 rounded-full text-[11px] font-mono uppercase tracking-wider transition-colors",
+                env === "production"
+                  ? "bg-[var(--success)]/15 text-[var(--success)]"
+                  : "text-[var(--fg-subtle)] hover:text-[var(--fg)]")}
               onClick={() => switchEnv("production")}
               data-testid="env-switch-production"
-            >
-              Production
-            </button>
+            >Production</button>
           </div>
+
+          {/* Surface switcher */}
           <button
             onClick={() => navigate(`/${otherSurface === "backoffice" ? "app" : "portal"}`)}
-            className="text-xs font-mono uppercase tracking-wider text-[#888] hover:text-white border border-[#222] px-3 py-1.5 rounded-sm transition-colors"
+            className="btn-pill btn-ghost text-xs h-9 px-4"
             data-testid="switch-surface"
           >
-            Go to {otherSurface === "backoffice" ? "Backoffice" : "Portal"}
+            <ArrowSquareOut size={13} weight="bold" />
+            {otherSurface === "backoffice" ? "Backoffice" : "Portal"}
           </button>
-          <div className="flex items-center gap-2 pl-3 border-l border-[#1a1a1a]">
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="w-9 h-9 rounded-full border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] flex items-center justify-center transition-colors"
+            data-testid="theme-toggle"
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <Sun size={15} weight="bold" /> : <Moon size={15} weight="bold" />}
+          </button>
+
+          {/* User */}
+          <div className="flex items-center gap-3 pl-3 border-l border-[var(--border)]">
             {user?.picture && (
-              <img src={user.picture} alt={user.name} className="w-7 h-7 rounded-full border border-[#222]" />
+              <img src={user.picture} alt={user.name} className="w-8 h-8 rounded-full border border-[var(--border)]" />
             )}
             <div className="text-xs leading-tight">
-              <div className="text-white font-medium" data-testid="current-user-name">{user?.name}</div>
-              <div className="text-[#555] font-mono uppercase text-[10px]" data-testid="current-user-role">{user?.platform_role}</div>
+              <div className="text-[var(--fg)] font-semibold" data-testid="current-user-name">{user?.name}</div>
+              <div className="text-[var(--fg-subtle)] font-mono uppercase text-[10px] tracking-wider" data-testid="current-user-role">{user?.platform_role}</div>
             </div>
             <button
               onClick={logout}
-              className="ml-2 p-2 rounded-sm hover:bg-[#111] text-[#888] hover:text-white transition-colors"
+              className="ml-1 p-2 rounded-full hover:bg-[var(--surface-hover)] text-[var(--fg-muted)] hover:text-[var(--fg)] transition-colors"
               data-testid="logout-button"
               title="Log out"
             >
-              <SignOut size={16} />
+              <SignOut size={15} />
             </button>
           </div>
         </div>
@@ -114,28 +133,23 @@ export default function AppShell({ children, surface = "backoffice" }) {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="w-56 border-r border-[#1a1a1a] bg-[#080808] overflow-y-auto" data-testid="sidebar">
+        <aside className="w-60 border-r border-[var(--border)] bg-[var(--surface)] overflow-y-auto" data-testid="sidebar">
           <nav className="py-3">
             {items.map((item) => {
               const Icon = item.icon;
+              const slug = item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
               return (
                 <NavLink
                   key={item.to}
                   to={item.to}
                   end={item.end}
-                  className={({ isActive }) =>
-                    cn("nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-[#888] hover:bg-[#0f0f0f] hover:text-white border-l-2 border-transparent",
-                      isActive && "")
-                  }
-                  data-testid={`nav-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`}
+                  data-testid={`nav-${slug}`}
+                  className="block"
                 >
                   {({ isActive }) => (
-                    <div
-                      data-active={isActive}
-                      className="nav-item -mx-4 -my-2.5 px-4 py-2.5 flex items-center gap-3 w-[calc(100%+2rem)] border-l-2 border-transparent"
-                    >
-                      <Icon size={16} weight={isActive ? "fill" : "regular"} />
-                      <span className={cn(isActive ? "text-white font-medium" : "")}>{item.label}</span>
+                    <div data-active={isActive} className="nav-item">
+                      <Icon size={17} weight={isActive ? "fill" : "regular"} />
+                      <span>{item.label}</span>
                     </div>
                   )}
                 </NavLink>

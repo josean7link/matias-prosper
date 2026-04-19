@@ -18,9 +18,9 @@ export default function Integrations() {
                 <div className="font-display font-bold text-lg">{a.name}</div>
                 <EnvPill env={a.environment} />
               </div>
-              <div className="text-sm text-[#888] mb-3">{a.description}</div>
-              <div className="flex justify-between items-center pt-3 border-t border-[#1a1a1a]">
-                <span className="font-mono text-xs text-[#555]">{fmtDate(a.created_at)}</span>
+              <div className="text-sm text-[var(--fg-muted)] mb-3">{a.description}</div>
+              <div className="flex justify-between items-center pt-3 border-t border-[var(--border)]">
+                <span className="font-mono text-xs text-[var(--fg-subtle)]">{fmtDate(a.created_at)}</span>
                 <StatusBadge value={a.status} />
               </div>
             </div>

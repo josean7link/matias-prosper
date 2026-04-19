@@ -27,7 +27,7 @@ export default function PortalTransactions() {
             <tbody>
               {items.map((t) => (
                 <tr key={t.tx_id} data-testid={`ptx-${t.tx_id}`}>
-                  <td className="px-4 py-3 font-mono text-xs text-[#888]">{fmtDateTime(t.created_at)}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[var(--fg-muted)]">{fmtDateTime(t.created_at)}</td>
                   <td className="px-4 py-3 text-xs uppercase tracking-wider">{t.type}</td>
                   <td className="px-4 py-3 text-right font-mono">{fmtMoney(t.amount, "USD", 2)}</td>
                   <td className="px-4 py-3 font-mono">{t.asset_code}</td>

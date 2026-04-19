@@ -25,12 +25,12 @@ export default function Products() {
             <tbody>
               {items.map((p) => (
                 <tr key={p.product_id} data-testid={`product-row-${p.product_id}`}>
-                  <td className="px-4 py-3 text-white font-medium">{p.name}</td>
-                  <td className="px-4 py-3 text-[#ccc] capitalize">{p.kind.replace("_", " ")}</td>
+                  <td className="px-4 py-3 text-[var(--fg)] font-medium">{p.name}</td>
+                  <td className="px-4 py-3 text-[var(--fg)] capitalize">{p.kind.replace("_", " ")}</td>
                   <td className="px-4 py-3 text-right font-mono">{p.term_days ? `${p.term_days}d` : "—"}</td>
-                  <td className="px-4 py-3 text-right font-mono text-[#00C853]">{fmtBps(p.apr_bps)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-[var(--success)]">{fmtBps(p.apr_bps)}</td>
                   <td className="px-4 py-3 text-right font-mono">{fmtMoney(p.min_amount)}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-[#ccc]">{p.principal_asset} → {p.payout_asset}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[var(--fg)]">{p.principal_asset} → {p.payout_asset}</td>
                   <td className="px-4 py-3"><StatusBadge value={p.status} /></td>
                 </tr>
               ))}

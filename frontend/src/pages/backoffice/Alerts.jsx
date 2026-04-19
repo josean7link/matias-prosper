@@ -37,19 +37,19 @@ export default function Alerts() {
                     <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: sevColor[a.severity] }}>
                       {a.severity} · {a.kind}
                     </span>
-                    <span className="text-xs text-[#555]">{relativeTime(a.created_at)}</span>
+                    <span className="text-xs text-[var(--fg-subtle)]">{relativeTime(a.created_at)}</span>
                   </div>
-                  <div className="font-medium text-white mt-1">{a.title}</div>
-                  <div className="text-sm text-[#888] mt-1">{a.message}</div>
+                  <div className="font-medium text-[var(--fg)] mt-1">{a.title}</div>
+                  <div className="text-sm text-[var(--fg-muted)] mt-1">{a.message}</div>
                 </div>
                 {!a.resolved && (
                   <Button size="sm" onClick={() => resolve(a.alert_id)}
-                          className="bg-transparent border border-[#222] hover:bg-[#111] text-xs rounded-sm"
+                          className="bg-transparent border border-[var(--border-strong)] hover:bg-[var(--surface-hover)] text-xs rounded-sm"
                           data-testid={`resolve-alert-${a.alert_id}`}>
                     Resolve
                   </Button>
                 )}
-                {a.resolved && <span className="text-xs font-mono text-[#00C853] uppercase tracking-wider">Resolved</span>}
+                {a.resolved && <span className="text-xs font-mono text-[var(--success)] uppercase tracking-wider">Resolved</span>}
               </div>
             );
           })}

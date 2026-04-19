@@ -36,14 +36,14 @@ export default function Yield() {
         <KpiCard label="Yield Paid (platform · 30d)" value={fmtMoney(overview?.kpis?.yield_paid_30d || 0)} testId="yield-30d" />
       </div>
       <div className="prosper-card p-5">
-        <div className="text-[10px] uppercase tracking-wider text-[#888] mb-3">Fund NAV performance</div>
+        <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)] mb-3">Fund NAV performance</div>
         <div className="h-[300px]">
           <ResponsiveContainer>
             <LineChart data={overview?.nav_series || []}>
-              <CartesianGrid stroke="#1a1a1a" vertical={false} />
-              <XAxis dataKey="as_of" stroke="#555" fontSize={10} tickFormatter={(v) => v.slice(5,10)} />
-              <YAxis stroke="#555" fontSize={10} tickFormatter={(v) => v.toFixed(4)} domain={["auto", "auto"]} />
-              <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid #222", fontSize: 12 }} formatter={(v) => fmtNum(v, 6)} />
+              <CartesianGrid stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="as_of" stroke="var(--fg-muted)" fontSize={10} tickFormatter={(v) => v.slice(5,10)} />
+              <YAxis stroke="var(--fg-muted)" fontSize={10} tickFormatter={(v) => v.toFixed(4)} domain={["auto", "auto"]} />
+              <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--fg)", borderRadius: "8px", fontSize: 12 }} formatter={(v) => fmtNum(v, 6)} />
               <Line type="monotone" dataKey="nav" stroke="#00C853" strokeWidth={1.5} dot={false} />
             </LineChart>
           </ResponsiveContainer>

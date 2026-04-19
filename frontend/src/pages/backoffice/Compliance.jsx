@@ -40,8 +40,8 @@ export default function Compliance() {
               {items.map((r) => (
                 <tr key={r.review_id} data-testid={`compliance-row-${r.review_id}`}>
                   <td className="px-4 py-3">
-                    <div className="text-white">{r.case?.applicant_name || "—"}</div>
-                    <div className="text-xs text-[#555] font-mono">{r.case?.applicant_email}</div>
+                    <div className="text-[var(--fg)]">{r.case?.applicant_name || "—"}</div>
+                    <div className="text-xs text-[var(--fg-subtle)] font-mono">{r.case?.applicant_email}</div>
                   </td>
                   <td className="px-4 py-3"><StatusBadge value={r.kyc_status} /></td>
                   <td className="px-4 py-3"><StatusBadge value={r.aml_check} /></td>
@@ -52,7 +52,7 @@ export default function Compliance() {
                   <td className="px-4 py-3 text-right">
                     <div className="flex gap-1 justify-end">
                       <Button size="sm" variant="outline" onClick={() => decide(r.review_id, "rejected")}
-                              className="h-7 text-xs border-[#FF3D00]/30 text-[#FF3D00] rounded-sm"
+                              className="h-7 text-xs border-[#FF3D00]/30 text-[var(--danger)] rounded-sm"
                               data-testid={`reject-${r.review_id}`}>Reject</Button>
                       <Button size="sm" onClick={() => decide(r.review_id, "approved")}
                               className="h-7 text-xs bg-[#00C853] text-black hover:bg-[#00B84A] rounded-sm"

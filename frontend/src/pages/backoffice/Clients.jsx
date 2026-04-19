@@ -27,17 +27,17 @@ export default function Clients() {
       <PageHeader title="Clients" subtitle={`${items.length} organizations`} />
       <div className="flex gap-3 mb-4">
         <div className="relative flex-1 max-w-xs">
-          <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" />
+          <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-subtle)]" />
           <Input
             placeholder="Search by name…"
-            className="pl-9 bg-[#0a0a0a] border-[#1a1a1a] rounded-sm font-mono text-sm"
+            className="pl-9 bg-[var(--surface)] border-[var(--border)] rounded-md font-mono text-sm"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             data-testid="clients-search"
           />
         </div>
         <Select value={type} onValueChange={setType}>
-          <SelectTrigger className="w-[180px] bg-[#0a0a0a] border-[#1a1a1a] rounded-sm" data-testid="filter-type"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="w-[180px] bg-[var(--surface)] border-[var(--border)] rounded-md" data-testid="filter-type"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
             <SelectItem value="partner">Partner</SelectItem>
@@ -46,7 +46,7 @@ export default function Clients() {
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-[180px] bg-[#0a0a0a] border-[#1a1a1a] rounded-sm" data-testid="filter-status"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[180px] bg-[var(--surface)] border-[var(--border)] rounded-md" data-testid="filter-status"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="active">Active</SelectItem>
@@ -61,7 +61,7 @@ export default function Clients() {
       ) : (
         <div className="prosper-card overflow-hidden">
           <table className="data-table w-full">
-            <thead className="border-b border-[#1a1a1a]">
+            <thead className="border-b border-[var(--border)]">
               <tr>
                 <th className="text-left px-4 py-3">Name</th>
                 <th className="text-left px-4 py-3">Type</th>
@@ -77,14 +77,14 @@ export default function Clients() {
               {items.map((o) => (
                 <tr key={o.org_id} className="cursor-pointer" onClick={() => nav(`/app/clients/${o.org_id}`)}
                     data-testid={`client-row-${o.org_id}`}>
-                  <td className="px-4 py-3 text-white font-medium">{o.name}</td>
-                  <td className="px-4 py-3 text-[#ccc] capitalize">{o.type}</td>
-                  <td className="px-4 py-3 font-mono text-[#888]">{o.country || "—"}</td>
+                  <td className="px-4 py-3 text-[var(--fg)] font-medium">{o.name}</td>
+                  <td className="px-4 py-3 text-[var(--fg)] capitalize">{o.type}</td>
+                  <td className="px-4 py-3 font-mono text-[var(--fg-muted)]">{o.country || "—"}</td>
                   <td className="px-4 py-3"><EnvPill env={o.environment} /></td>
                   <td className="px-4 py-3 text-right font-mono">{fmtMoney(o.aum_usd)}</td>
                   <td className="px-4 py-3 text-right font-mono">{fmtNum(o.active_investors, 0)}</td>
                   <td className="px-4 py-3"><StatusBadge value={o.status} /></td>
-                  <td className="px-4 py-3 text-[#888] font-mono text-xs">{fmtDate(o.created_at)}</td>
+                  <td className="px-4 py-3 text-[var(--fg-muted)] font-mono text-xs">{fmtDate(o.created_at)}</td>
                 </tr>
               ))}
             </tbody>

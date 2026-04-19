@@ -37,8 +37,8 @@ export default function PortalBalances() {
                   <tr key={p.position_id} data-testid={`pos-${p.position_id}`}>
                     <td className="px-4 py-3"><CopyField value={p.stellar_address} /></td>
                     <td className="px-4 py-3 text-right font-mono">{fmtMoney(p.principal)}</td>
-                    <td className="px-4 py-3 text-right font-mono text-[#00C853]">{fmtMoney(p.accrued_interest)}</td>
-                    <td className="px-4 py-3 text-xs font-mono text-[#888]">{fmtDate(p.maturity_date)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-[var(--success)]">{fmtMoney(p.accrued_interest)}</td>
+                    <td className="px-4 py-3 text-xs font-mono text-[var(--fg-muted)]">{fmtDate(p.maturity_date)}</td>
                     <td className="px-4 py-3"><StatusBadge value={p.status} /></td>
                   </tr>
                 ))}

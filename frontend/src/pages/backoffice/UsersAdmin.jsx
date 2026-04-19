@@ -35,25 +35,25 @@ export default function UsersAdmin() {
               {users.map((u) => (
                 <tr key={u.user_id} data-testid={`user-row-${u.user_id}`}>
                   <td className="px-4 py-3 flex items-center gap-2">
-                    {u.picture && <img src={u.picture} alt="" className="w-6 h-6 rounded-full border border-[#222]" />}
+                    {u.picture && <img src={u.picture} alt="" className="w-6 h-6 rounded-full border border-[var(--border-strong)]" />}
                     <span>{u.name}</span>
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs text-[#ccc]">{u.email}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[var(--fg)]">{u.email}</td>
                   <td className="px-4 py-3 text-xs">
-                    <span className={u.is_internal ? "text-[#00C853]" : "text-[#888]"}>
+                    <span className={u.is_internal ? "text-[var(--success)]" : "text-[var(--fg-muted)]"}>
                       {u.is_internal ? "internal" : "external"}
                     </span>
                   </td>
                   <td className="px-4 py-3">
                     <Select value={u.platform_role} onValueChange={(v) => updateRole(u.user_id, v)}>
-                      <SelectTrigger className="w-[160px] h-7 bg-[#0a0a0a] border-[#1a1a1a] rounded-sm text-xs" data-testid={`role-${u.user_id}`}>
+                      <SelectTrigger className="w-[160px] h-7 bg-[var(--surface)] border-[var(--border)] rounded-md text-xs" data-testid={`role-${u.user_id}`}>
                         <SelectValue /></SelectTrigger>
                       <SelectContent>
                         {ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="px-4 py-3 text-xs font-mono text-[#888]">{fmtDate(u.created_at)}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-[var(--fg-muted)]">{fmtDate(u.created_at)}</td>
                 </tr>
               ))}
             </tbody>

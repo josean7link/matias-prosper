@@ -32,15 +32,15 @@ export default function PortalOverview() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2 prosper-card p-5">
-          <div className="text-[10px] uppercase tracking-wider text-[#888] mb-3">NAV · 14 days</div>
+          <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)] mb-3">NAV · 14 days</div>
           <div className="h-[240px]">
             <ResponsiveContainer>
               <AreaChart data={overview?.nav_series || []}>
                 <defs><linearGradient id="pnav" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#00C853" stopOpacity={0.4}/><stop offset="100%" stopColor="#00C853" stopOpacity={0}/></linearGradient></defs>
-                <CartesianGrid stroke="#1a1a1a" vertical={false} />
-                <XAxis dataKey="as_of" stroke="#555" fontSize={10} tickFormatter={(v) => v.slice(5,10)} />
-                <YAxis stroke="#555" fontSize={10} tickFormatter={(v) => v.toFixed(4)} domain={["auto","auto"]} />
-                <Tooltip contentStyle={{ background: "#0a0a0a", border: "1px solid #222", fontSize: 12 }} formatter={(v) => fmtNum(v, 6)} />
+                <CartesianGrid stroke="var(--border)" vertical={false} />
+                <XAxis dataKey="as_of" stroke="var(--fg-muted)" fontSize={10} tickFormatter={(v) => v.slice(5,10)} />
+                <YAxis stroke="var(--fg-muted)" fontSize={10} tickFormatter={(v) => v.toFixed(4)} domain={["auto","auto"]} />
+                <Tooltip contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--fg)", borderRadius: "8px", fontSize: 12 }} formatter={(v) => fmtNum(v, 6)} />
                 <Area type="monotone" dataKey="nav" stroke="#00C853" strokeWidth={1.5} fill="url(#pnav)" />
               </AreaChart>
             </ResponsiveContainer>
@@ -48,14 +48,14 @@ export default function PortalOverview() {
         </div>
 
         <div className="prosper-card p-5">
-          <div className="text-[10px] uppercase tracking-wider text-[#888] mb-3">Recent Transactions</div>
+          <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)] mb-3">Recent Transactions</div>
           {txs.length === 0 ? <EmptyState title="No activity yet" /> : (
             <div className="space-y-2">
               {txs.slice(0, 6).map(t => (
-                <div key={t.tx_id} className="flex justify-between items-center py-2 border-b border-[#1a1a1a] last:border-0">
+                <div key={t.tx_id} className="flex justify-between items-center py-2 border-b border-[var(--border)] last:border-0">
                   <div>
                     <div className="text-sm capitalize">{t.type}</div>
-                    <div className="text-xs font-mono text-[#555]">{fmtDate(t.created_at, true)}</div>
+                    <div className="text-xs font-mono text-[var(--fg-subtle)]">{fmtDate(t.created_at, true)}</div>
                   </div>
                   <div className="text-right">
                     <div className="font-mono text-sm">{fmtMoney(t.amount, "USD", 2)}</div>

@@ -25,9 +25,9 @@ export default function EndCustomers() {
               {items.map((c) => (
                 <tr key={c.end_customer_id} data-testid={`ec-${c.end_customer_id}`}>
                   <td className="px-4 py-3 font-mono text-xs">{c.external_ref}</td>
-                  <td className="px-4 py-3 text-white">{c.name}</td>
-                  <td className="px-4 py-3 text-xs font-mono text-[#ccc]">{c.email}</td>
-                  <td className="px-4 py-3 font-mono text-[#888]">{c.country}</td>
+                  <td className="px-4 py-3 text-[var(--fg)]">{c.name}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-[var(--fg)]">{c.email}</td>
+                  <td className="px-4 py-3 font-mono text-[var(--fg-muted)]">{c.country}</td>
                   <td className="px-4 py-3 text-right font-mono">{fmtMoney(c.total_invested)}</td>
                   <td className="px-4 py-3"><StatusBadge value={c.kyc_status} /></td>
                 </tr>

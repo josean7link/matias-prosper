@@ -98,7 +98,7 @@ function App() {
     <AppProvider>
       <BrowserRouter>
         <InnerRouter />
-        <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: "#0a0a0a", border: "1px solid #222", fontFamily: "IBM Plex Sans" } }} />
+        <Toaster position="top-right" toastOptions={{ style: { background: "var(--surface)", border: "1px solid var(--border)", color: "var(--fg)", fontFamily: "IBM Plex Sans" } }} />
       </BrowserRouter>
     </AppProvider>
   );

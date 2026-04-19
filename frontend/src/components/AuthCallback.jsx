@@ -38,10 +38,10 @@ export default function AuthCallback() {
   }, [navigate, setUser]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#050505] text-white" data-testid="auth-callback">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--bg)] text-[var(--fg)]" data-testid="auth-callback">
       <div className="text-center">
         <div className="w-8 h-8 border-2 border-[#0066FF] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-        <div className="font-mono text-sm uppercase tracking-widest text-[#888]">Authenticating</div>
+        <div className="font-mono text-sm uppercase tracking-widest text-[var(--fg-muted)]">Authenticating</div>
       </div>
     </div>
   );

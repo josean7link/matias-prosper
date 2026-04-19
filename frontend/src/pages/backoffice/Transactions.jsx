@@ -26,10 +26,10 @@ export default function Transactions() {
       <PageHeader title="Transactions Ledger" subtitle={`${items.length} transactions · ${env}`} />
       <div className="flex gap-3 mb-4">
         <Input placeholder="Search hash, prosperTxId, memo…"
-               className="max-w-sm bg-[#0a0a0a] border-[#1a1a1a] rounded-sm font-mono text-xs"
+               className="max-w-sm bg-[var(--surface)] border-[var(--border)] rounded-md font-mono text-xs"
                value={search} onChange={(e) => setSearch(e.target.value)} data-testid="tx-search" />
         <Select value={type} onValueChange={setType}>
-          <SelectTrigger className="w-[160px] bg-[#0a0a0a] border-[#1a1a1a] rounded-sm"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="w-[160px] bg-[var(--surface)] border-[var(--border)] rounded-md"><SelectValue placeholder="Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
             {["mint", "burn", "subscribe", "redeem", "transfer", "deposit", "withdraw", "claim", "fund", "fee"].map(t =>
@@ -38,7 +38,7 @@ export default function Transactions() {
           </SelectContent>
         </Select>
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-[160px] bg-[#0a0a0a] border-[#1a1a1a] rounded-sm"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[160px] bg-[var(--surface)] border-[var(--border)] rounded-md"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All</SelectItem>
             {["pending", "submitted", "confirmed", "failed", "retrying"].map(s =>
@@ -63,13 +63,13 @@ export default function Transactions() {
             <tbody>
               {items.map((t) => (
                 <tr key={t.tx_id} data-testid={`tx-row-${t.tx_id}`}>
-                  <td className="px-4 py-3 font-mono text-xs text-[#888]">{fmtDateTime(t.created_at)}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[var(--fg-muted)]">{fmtDateTime(t.created_at)}</td>
                   <td className="px-4 py-3"><span className="uppercase text-xs font-semibold tracking-wider">{t.type}</span></td>
                   <td className="px-4 py-3 text-right font-mono">{fmtMoney(t.amount, "USD", 2)}</td>
-                  <td className="px-4 py-3 font-mono text-[#ccc]">{t.asset_code}</td>
+                  <td className="px-4 py-3 font-mono text-[var(--fg)]">{t.asset_code}</td>
                   <td className="px-4 py-3"><CopyField value={t.prosper_tx_id} testId={`ptxid-${t.tx_id}`} /></td>
                   <td className="px-4 py-3"><StellarLink hash={t.tx_hash} testId={`txhash-${t.tx_id}`} /></td>
-                  <td className="px-4 py-3 text-right font-mono text-[#888]">{t.ledger || "—"}</td>
+                  <td className="px-4 py-3 text-right font-mono text-[var(--fg-muted)]">{t.ledger || "—"}</td>
                   <td className="px-4 py-3"><StatusBadge value={t.status} /></td>
                 </tr>
               ))}

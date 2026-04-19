@@ -33,10 +33,10 @@ export default function Webhooks() {
               {hooks.map((h) => (
                 <tr key={h.endpoint_id} className="cursor-pointer" onClick={() => view(h)}
                     data-testid={`webhook-row-${h.endpoint_id}`}>
-                  <td className="px-4 py-3 font-mono text-xs text-[#ccc]">{h.url}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-[var(--fg)]">{h.url}</td>
                   <td className="px-4 py-3"><EnvPill env={h.environment} /></td>
                   <td className="px-4 py-3 text-xs">{h.events?.join(", ")}</td>
-                  <td className="px-4 py-3 text-xs font-mono text-[#888]">{fmtDate(h.created_at)}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-[var(--fg-muted)]">{fmtDate(h.created_at)}</td>
                   <td className="px-4 py-3"><StatusBadge value={h.status} /></td>
                 </tr>
               ))}
@@ -46,7 +46,7 @@ export default function Webhooks() {
       )}
 
       <Dialog open={!!active} onOpenChange={(o) => !o && setActive(null)}>
-        <DialogContent className="max-w-3xl bg-[#0a0a0a] border-[#222]">
+        <DialogContent className="max-w-3xl bg-[var(--surface)] border-[var(--border-strong)]">
           <DialogHeader><DialogTitle className="font-mono text-sm">{active?.url}</DialogTitle></DialogHeader>
           <div className="max-h-[60vh] overflow-y-auto">
             <table className="data-table w-full">
@@ -54,10 +54,10 @@ export default function Webhooks() {
               <tbody>
                 {deliveries.map((d) => (
                   <tr key={d.delivery_id}>
-                    <td className="py-2 font-mono text-xs text-[#888]">{fmtDate(d.created_at, true)}</td>
+                    <td className="py-2 font-mono text-xs text-[var(--fg-muted)]">{fmtDate(d.created_at, true)}</td>
                     <td className="py-2 text-xs">{d.event_type}</td>
                     <td className="py-2 text-right font-mono">
-                      <span className={d.response_status === 200 ? "text-[#00C853]" : "text-[#FF3D00]"}>{d.response_status}</span>
+                      <span className={d.response_status === 200 ? "text-[var(--success)]" : "text-[var(--danger)]"}>{d.response_status}</span>
                     </td>
                     <td className="py-2 text-xs">{d.delivered ? "yes" : "no"}</td>
                   </tr>

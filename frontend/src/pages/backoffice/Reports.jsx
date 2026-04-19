@@ -17,7 +17,7 @@ export default function Reports() {
         <div className="space-y-6">
           {Object.entries(grouped).map(([kind, list]) => (
             <section key={kind}>
-              <div className="text-[10px] uppercase tracking-wider text-[#888] font-mono mb-2">{kind.replace("_", " ")}</div>
+              <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)] font-mono mb-2">{kind.replace("_", " ")}</div>
               <div className="prosper-card overflow-hidden">
                 <table className="data-table w-full">
                   <thead><tr><th className="text-left px-4 py-3">Period</th><th className="text-left px-4 py-3">Generated</th><th className="text-left px-4 py-3">Status</th><th className="text-right px-4 py-3">Download</th></tr></thead>
@@ -25,10 +25,10 @@ export default function Reports() {
                     {list.map((r) => (
                       <tr key={r.report_id} data-testid={`report-${r.report_id}`}>
                         <td className="px-4 py-3 font-mono">{r.period}</td>
-                        <td className="px-4 py-3 text-xs font-mono text-[#888]">{fmtDate(r.created_at, true)}</td>
+                        <td className="px-4 py-3 text-xs font-mono text-[var(--fg-muted)]">{fmtDate(r.created_at, true)}</td>
                         <td className="px-4 py-3"><StatusBadge value={r.status} /></td>
                         <td className="px-4 py-3 text-right">
-                          <a href={r.download_url || "#"} className="inline-flex items-center gap-1 text-xs text-[#0066FF] hover:underline">
+                          <a href={r.download_url || "#"} className="inline-flex items-center gap-1 text-xs text-[var(--primary)] hover:underline">
                             <DownloadSimple size={12} /> Download
                           </a>
                         </td>

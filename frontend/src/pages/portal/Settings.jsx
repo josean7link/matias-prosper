@@ -7,12 +7,12 @@ export default function PortalSettings() {
     <div data-testid="portal-settings">
       <PageHeader title="Settings" subtitle="Personal & organization preferences" />
       <div className="prosper-card p-6 max-w-xl">
-        <div className="text-[10px] uppercase tracking-wider text-[#888] mb-2">Signed in as</div>
+        <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)] mb-2">Signed in as</div>
         <div className="flex items-center gap-3 mb-6">
-          {user?.picture && <img src={user.picture} alt="" className="w-12 h-12 rounded-full border border-[#222]" />}
+          {user?.picture && <img src={user.picture} alt="" className="w-12 h-12 rounded-full border border-[var(--border-strong)]" />}
           <div>
             <div className="font-semibold">{user?.name}</div>
-            <div className="font-mono text-xs text-[#888]">{user?.email}</div>
+            <div className="font-mono text-xs text-[var(--fg-muted)]">{user?.email}</div>
           </div>
         </div>
         <div className="space-y-2 text-sm">
@@ -26,8 +26,8 @@ export default function PortalSettings() {
   );
 }
 const Row = ({ label, value }) => (
-  <div className="flex justify-between py-2 border-b border-[#1a1a1a] last:border-0">
-    <span className="text-[#888] text-xs uppercase tracking-wider">{label}</span>
+  <div className="flex justify-between py-2 border-b border-[var(--border)] last:border-0">
+    <span className="text-[var(--fg-muted)] text-xs uppercase tracking-wider">{label}</span>
     <span>{value}</span>
   </div>
 );

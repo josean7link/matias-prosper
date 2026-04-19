@@ -5,7 +5,7 @@ export default function ProtectedRoute({ children }) {
   const { user, loading } = useApp();
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#050505]" data-testid="loading-screen">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--bg)]" data-testid="loading-screen">
         <div className="w-8 h-8 border-2 border-[#0066FF] border-t-transparent rounded-full animate-spin" />
       </div>
     );

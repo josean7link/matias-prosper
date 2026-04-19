@@ -44,7 +44,7 @@ export default function Onboarding() {
       <PageHeader title="Onboarding Queue" subtitle={`${items.length} applications`} />
       <div className="mb-4 flex gap-3">
         <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-[200px] bg-[#0a0a0a] border-[#1a1a1a] rounded-sm" data-testid="onboarding-filter">
+          <SelectTrigger className="w-[200px] bg-[var(--surface)] border-[var(--border)] rounded-md" data-testid="onboarding-filter">
             <SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
@@ -71,20 +71,20 @@ export default function Onboarding() {
             <tbody>
               {items.map((c) => (
                 <tr key={c.case_id} className="cursor-pointer" onClick={() => openCase(c)} data-testid={`onboarding-row-${c.case_id}`}>
-                  <td className="px-4 py-3 text-white">{c.applicant_name}<div className="text-[11px] text-[#555] font-mono">{c.applicant_email}</div></td>
-                  <td className="px-4 py-3 text-[#ccc] capitalize">{c.applicant_type}</td>
-                  <td className="px-4 py-3 font-mono text-[#888]">{c.country || "—"}</td>
+                  <td className="px-4 py-3 text-[var(--fg)]">{c.applicant_name}<div className="text-[11px] text-[var(--fg-subtle)] font-mono">{c.applicant_email}</div></td>
+                  <td className="px-4 py-3 text-[var(--fg)] capitalize">{c.applicant_type}</td>
+                  <td className="px-4 py-3 font-mono text-[var(--fg-muted)]">{c.country || "—"}</td>
                   <td className="px-4 py-3 text-right font-mono">{c.risk_score ? fmtNum(c.risk_score * 100, 0) + "%" : "—"}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center gap-2">
-                      <div className="w-16 h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
+                      <div className="w-16 h-1 bg-[var(--border)] rounded-full overflow-hidden">
                         <div className="h-full bg-[#0066FF]" style={{ width: `${c.progress || 0}%` }} />
                       </div>
                       <span className="font-mono text-xs">{c.progress || 0}%</span>
                     </div>
                   </td>
                   <td className="px-4 py-3"><StatusBadge value={c.status} /></td>
-                  <td className="px-4 py-3 text-xs font-mono text-[#888]">{relativeTime(c.sla_due)}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-[var(--fg-muted)]">{relativeTime(c.sla_due)}</td>
                 </tr>
               ))}
             </tbody>
@@ -93,7 +93,7 @@ export default function Onboarding() {
       )}
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent className="max-w-2xl bg-[#0a0a0a] border-[#222]">
+        <DialogContent className="max-w-2xl bg-[var(--surface)] border-[var(--border-strong)]">
           <DialogHeader><DialogTitle className="font-display">{selected?.applicant_name}</DialogTitle></DialogHeader>
           {detail && (
             <div className="space-y-4">
@@ -105,24 +105,24 @@ export default function Onboarding() {
                 <Field label="Risk" value={selected.risk_score ? (selected.risk_score * 100).toFixed(0) + "%" : "—"} />
                 <Field label="Created" value={fmtDate(selected.created_at, true)} />
               </div>
-              <div className="border-t border-[#1a1a1a] pt-4">
-                <div className="text-[10px] uppercase tracking-wider text-[#888] mb-2">Compliance Checks</div>
+              <div className="border-t border-[var(--border)] pt-4">
+                <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)] mb-2">Compliance Checks</div>
                 <div className="grid grid-cols-2 gap-y-2 text-xs">
-                  <div><span className="text-[#888]">KYC:</span> <StatusBadge value={detail.compliance?.kyc_status} /></div>
-                  <div><span className="text-[#888]">AML:</span> <StatusBadge value={detail.compliance?.aml_check} /></div>
-                  <div><span className="text-[#888]">Sanctions:</span> <StatusBadge value={detail.compliance?.sanctions_check} /></div>
-                  <div><span className="text-[#888]">PEP:</span> <StatusBadge value={detail.compliance?.pep_check} /></div>
-                  <div><span className="text-[#888]">Travel Rule:</span> <StatusBadge value={detail.compliance?.travel_rule} /></div>
-                  <div><span className="text-[#888]">Decision:</span> <StatusBadge value={detail.compliance?.decision} /></div>
+                  <div><span className="text-[var(--fg-muted)]">KYC:</span> <StatusBadge value={detail.compliance?.kyc_status} /></div>
+                  <div><span className="text-[var(--fg-muted)]">AML:</span> <StatusBadge value={detail.compliance?.aml_check} /></div>
+                  <div><span className="text-[var(--fg-muted)]">Sanctions:</span> <StatusBadge value={detail.compliance?.sanctions_check} /></div>
+                  <div><span className="text-[var(--fg-muted)]">PEP:</span> <StatusBadge value={detail.compliance?.pep_check} /></div>
+                  <div><span className="text-[var(--fg-muted)]">Travel Rule:</span> <StatusBadge value={detail.compliance?.travel_rule} /></div>
+                  <div><span className="text-[var(--fg-muted)]">Decision:</span> <StatusBadge value={detail.compliance?.decision} /></div>
                 </div>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => action("rejected")} data-testid="case-reject"
-                    className="border-[#FF3D00]/40 text-[#FF3D00] hover:bg-[#FF3D00]/10 rounded-sm">Reject</Button>
+                    className="border-[#FF3D00]/40 text-[var(--danger)] hover:bg-[#FF3D00]/10 rounded-sm">Reject</Button>
             <Button variant="outline" onClick={() => action("needs_info")} data-testid="case-needs-info"
-                    className="border-[#FFAB00]/40 text-[#FFAB00] hover:bg-[#FFAB00]/10 rounded-sm">Request Info</Button>
+                    className="border-[#FFAB00]/40 text-[var(--warning)] hover:bg-[#FFAB00]/10 rounded-sm">Request Info</Button>
             <Button onClick={() => action("approved")} data-testid="case-approve"
                     className="bg-[#00C853] text-black hover:bg-[#00B84A] rounded-sm font-semibold">Approve</Button>
           </DialogFooter>
@@ -134,7 +134,7 @@ export default function Onboarding() {
 
 const Field = ({ label, value, children }) => (
   <div>
-    <div className="text-[10px] uppercase tracking-wider text-[#888]">{label}</div>
-    <div className="mt-0.5 text-white">{children || value || "—"}</div>
+    <div className="text-[10px] uppercase tracking-wider text-[var(--fg-muted)]">{label}</div>
+    <div className="mt-0.5 text-[var(--fg)]">{children || value || "—"}</div>
   </div>
 );

@@ -39,7 +39,7 @@ export default function Reconciliation() {
       </MetricBar>
       <div className="mt-4 mb-4">
         <Select value={filter} onValueChange={setFilter}>
-          <SelectTrigger className="w-[200px] bg-[#0a0a0a] border-[#1a1a1a] rounded-sm" data-testid="recon-filter">
+          <SelectTrigger className="w-[200px] bg-[var(--surface)] border-[var(--border)] rounded-md" data-testid="recon-filter">
             <SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All records</SelectItem>
@@ -69,7 +69,7 @@ export default function Reconciliation() {
                   <td className="px-4 py-3"><StellarLink hash={r.tx_hash} /></td>
                   <td className="px-4 py-3 text-right font-mono">{r.tx ? fmtMoney(r.tx.amount) : "—"}</td>
                   <td className="px-4 py-3 capitalize text-xs">{r.tx?.type || "—"}</td>
-                  <td className="px-4 py-3 text-xs text-[#FFAB00]">{r.discrepancy || "—"}</td>
+                  <td className="px-4 py-3 text-xs text-[var(--warning)]">{r.discrepancy || "—"}</td>
                   <td className="px-4 py-3"><StatusBadge value={r.status} /></td>
                   <td className="px-4 py-3 text-right">
                     {r.status !== "matched" && r.status !== "resolved" && (

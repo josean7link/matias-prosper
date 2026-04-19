@@ -35,16 +35,16 @@ export default function ApiKeys() {
             <tbody>
               {keys.map((k) => (
                 <tr key={k.key_id} data-testid={`key-row-${k.key_id}`}>
-                  <td className="px-4 py-3 text-white">{k.label}</td>
+                  <td className="px-4 py-3 text-[var(--fg)]">{k.label}</td>
                   <td className="px-4 py-3"><CopyField value={k.key_prefix} /></td>
                   <td className="px-4 py-3"><EnvPill env={k.environment} /></td>
-                  <td className="px-4 py-3 text-xs font-mono text-[#ccc]">{k.scopes?.join(", ") || "—"}</td>
-                  <td className="px-4 py-3 text-xs font-mono text-[#888]">{k.last_used_at ? relativeTime(k.last_used_at) : "—"}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-[var(--fg)]">{k.scopes?.join(", ") || "—"}</td>
+                  <td className="px-4 py-3 text-xs font-mono text-[var(--fg-muted)]">{k.last_used_at ? relativeTime(k.last_used_at) : "—"}</td>
                   <td className="px-4 py-3"><StatusBadge value={k.status} /></td>
                   <td className="px-4 py-3 text-right">
                     {k.status === "active" && (
                       <Button size="sm" variant="outline" onClick={() => revoke(k.key_id)}
-                              className="h-7 text-xs border-[#FF3D00]/30 text-[#FF3D00] rounded-sm"
+                              className="h-7 text-xs border-[#FF3D00]/30 text-[var(--danger)] rounded-sm"
                               data-testid={`revoke-${k.key_id}`}>Revoke</Button>
                     )}
                   </td>
