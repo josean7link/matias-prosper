@@ -1,53 +1,106 @@
-import { useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
+import "@/index.css";
 import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { Toaster } from "@/components/ui/sonner";
+import { AppProvider } from "@/contexts/AppContext";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import AuthCallback from "@/components/AuthCallback";
+import AppShell from "@/components/layout/AppShell";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+import Login from "@/pages/Login";
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
+// Backoffice
+import Dashboard from "@/pages/backoffice/Dashboard";
+import Clients from "@/pages/backoffice/Clients";
+import ClientDetail from "@/pages/backoffice/ClientDetail";
+import Onboarding from "@/pages/backoffice/Onboarding";
+import Compliance from "@/pages/backoffice/Compliance";
+import Funds from "@/pages/backoffice/Funds";
+import Products from "@/pages/backoffice/Products";
+import Positions from "@/pages/backoffice/Positions";
+import Treasury from "@/pages/backoffice/Treasury";
+import Transactions from "@/pages/backoffice/Transactions";
+import Reconciliation from "@/pages/backoffice/Reconciliation";
+import Integrations from "@/pages/backoffice/Integrations";
+import ApiKeys from "@/pages/backoffice/ApiKeys";
+import Webhooks from "@/pages/backoffice/Webhooks";
+import Alerts from "@/pages/backoffice/Alerts";
+import Reports from "@/pages/backoffice/Reports";
+import UsersAdmin from "@/pages/backoffice/UsersAdmin";
+import AuditLog from "@/pages/backoffice/AuditLog";
 
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
+// Portal
+import PortalOverview from "@/pages/portal/Overview";
+import PortalOrganization from "@/pages/portal/Organization";
+import PortalBalances from "@/pages/portal/Balances";
+import PortalTransactions from "@/pages/portal/PortalTransactions";
+import YieldPage from "@/pages/portal/Yield";
+import EndCustomers from "@/pages/portal/EndCustomers";
+import PortalSettings from "@/pages/portal/Settings";
+import { PortalApiKeys, PortalWebhooks, PortalIntegrations, PortalReports, PortalCompliance, PortalUsers } from "@/pages/portal/Shared";
+
+function InnerRouter() {
+  const location = useLocation();
+
+  // Catch OAuth callback if session_id is in the URL fragment
+  if (typeof window !== "undefined" && window.location.hash?.includes("session_id=")) {
+    return <AuthCallback />;
+  }
 
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
-    </div>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+
+      <Route path="/" element={<Navigate to="/app" replace />} />
+
+      {/* Backoffice */}
+      <Route path="/app" element={<ProtectedRoute><AppShell surface="backoffice"><Dashboard /></AppShell></ProtectedRoute>} />
+      <Route path="/app/clients" element={<ProtectedRoute><AppShell surface="backoffice"><Clients /></AppShell></ProtectedRoute>} />
+      <Route path="/app/clients/:id" element={<ProtectedRoute><AppShell surface="backoffice"><ClientDetail /></AppShell></ProtectedRoute>} />
+      <Route path="/app/onboarding" element={<ProtectedRoute><AppShell surface="backoffice"><Onboarding /></AppShell></ProtectedRoute>} />
+      <Route path="/app/compliance" element={<ProtectedRoute><AppShell surface="backoffice"><Compliance /></AppShell></ProtectedRoute>} />
+      <Route path="/app/funds" element={<ProtectedRoute><AppShell surface="backoffice"><Funds /></AppShell></ProtectedRoute>} />
+      <Route path="/app/products" element={<ProtectedRoute><AppShell surface="backoffice"><Products /></AppShell></ProtectedRoute>} />
+      <Route path="/app/positions" element={<ProtectedRoute><AppShell surface="backoffice"><Positions /></AppShell></ProtectedRoute>} />
+      <Route path="/app/treasury" element={<ProtectedRoute><AppShell surface="backoffice"><Treasury /></AppShell></ProtectedRoute>} />
+      <Route path="/app/transactions" element={<ProtectedRoute><AppShell surface="backoffice"><Transactions /></AppShell></ProtectedRoute>} />
+      <Route path="/app/reconciliation" element={<ProtectedRoute><AppShell surface="backoffice"><Reconciliation /></AppShell></ProtectedRoute>} />
+      <Route path="/app/integrations" element={<ProtectedRoute><AppShell surface="backoffice"><Integrations /></AppShell></ProtectedRoute>} />
+      <Route path="/app/api-keys" element={<ProtectedRoute><AppShell surface="backoffice"><ApiKeys /></AppShell></ProtectedRoute>} />
+      <Route path="/app/webhooks" element={<ProtectedRoute><AppShell surface="backoffice"><Webhooks /></AppShell></ProtectedRoute>} />
+      <Route path="/app/alerts" element={<ProtectedRoute><AppShell surface="backoffice"><Alerts /></AppShell></ProtectedRoute>} />
+      <Route path="/app/reports" element={<ProtectedRoute><AppShell surface="backoffice"><Reports /></AppShell></ProtectedRoute>} />
+      <Route path="/app/users" element={<ProtectedRoute><AppShell surface="backoffice"><UsersAdmin /></AppShell></ProtectedRoute>} />
+      <Route path="/app/audit" element={<ProtectedRoute><AppShell surface="backoffice"><AuditLog /></AppShell></ProtectedRoute>} />
+
+      {/* Client Portal */}
+      <Route path="/portal" element={<ProtectedRoute><AppShell surface="portal"><PortalOverview /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/organization" element={<ProtectedRoute><AppShell surface="portal"><PortalOrganization /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/users" element={<ProtectedRoute><AppShell surface="portal"><PortalUsers /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/balances" element={<ProtectedRoute><AppShell surface="portal"><PortalBalances /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/transactions" element={<ProtectedRoute><AppShell surface="portal"><PortalTransactions /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/yield" element={<ProtectedRoute><AppShell surface="portal"><YieldPage /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/end-customers" element={<ProtectedRoute><AppShell surface="portal"><EndCustomers /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/integrations" element={<ProtectedRoute><AppShell surface="portal"><PortalIntegrations /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/api-keys" element={<ProtectedRoute><AppShell surface="portal"><PortalApiKeys /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/webhooks" element={<ProtectedRoute><AppShell surface="portal"><PortalWebhooks /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/reports" element={<ProtectedRoute><AppShell surface="portal"><PortalReports /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/compliance" element={<ProtectedRoute><AppShell surface="portal"><PortalCompliance /></AppShell></ProtectedRoute>} />
+      <Route path="/portal/settings" element={<ProtectedRoute><AppShell surface="portal"><PortalSettings /></AppShell></ProtectedRoute>} />
+
+      <Route path="*" element={<Navigate to="/app" replace />} />
+    </Routes>
   );
-};
+}
 
 function App() {
   return (
-    <div className="App">
+    <AppProvider>
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
+        <InnerRouter />
+        <Toaster theme="dark" position="top-right" toastOptions={{ style: { background: "#0a0a0a", border: "1px solid #222", fontFamily: "IBM Plex Sans" } }} />
       </BrowserRouter>
-    </div>
+    </AppProvider>
   );
 }
 

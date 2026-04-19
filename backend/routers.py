@@ -1,0 +1,780 @@
+"""All API routers for the Prosper platform, grouped by domain."""
+from __future__ import annotations
+from datetime import datetime, timedelta, timezone
+from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, Request
+from pydantic import BaseModel
+import hashlib
+import secrets
+import uuid
+
+from db import (
+    col, ORGANIZATIONS, ONBOARDING, COMPLIANCE, FUNDS, PRODUCTS, NAV_SNAPSHOTS,
+    TREASURY, POSITIONS, TRANSACTIONS, RECONCILIATION, API_APPS, API_KEYS,
+    WEBHOOK_ENDPOINTS, WEBHOOK_DELIVERIES, ALERTS, REPORTS, AUDIT_LOGS,
+    END_CUSTOMERS, ORG_USERS, USERS, SESSIONS
+)
+from models import (
+    User, Organization, OnboardingCase, ComplianceReview, Fund, Product,
+    NavSnapshot, Position, TreasuryAccount, Transaction, ReconciliationRecord,
+    ApiApp, ApiKey, WebhookEndpoint, WebhookDelivery, Alert, Report, AuditLog,
+    EndCustomer, OrgUser, now_utc, new_id
+)
+from auth import (
+    get_current_user, require_roles, exchange_session, upsert_user,
+    create_session, delete_session,
+)
+import prosper_client
+import seed as seed_module
+
+# Tag helpers -----------------------------------------------------------------
+
+
+def _strip_id(doc: dict) -> dict:
+    doc.pop("_id", None)
+    return doc
+
+
+async def _log_audit(actor: User | None, action: str, resource: str, resource_id: str = "",
+                     environment: str = "production", metadata: Optional[dict] = None):
+    await col(AUDIT_LOGS).insert_one({
+        "audit_id": f"aud_{new_id()}",
+        "actor_id": actor.user_id if actor else None,
+        "actor_email": actor.email if actor else None,
+        "action": action, "resource": resource, "resource_id": resource_id,
+        "environment": environment,
+        "metadata": metadata or {},
+        "created_at": now_utc().isoformat(),
+        "is_demo": False,
+    })
+
+
+# ============================================================================
+# AUTH
+# ============================================================================
+auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+class SessionRequest(BaseModel):
+    session_id: str
+
+
+@auth_router.post("/session")
+async def create_session_endpoint(body: SessionRequest, response: Response):
+    data = await exchange_session(body.session_id)
+    user = await upsert_user(data)
+    session_token = data["session_token"]
+    await create_session(user.user_id, session_token)
+    response.set_cookie(
+        "session_token", session_token,
+        httponly=True, secure=True, samesite="none",
+        path="/", max_age=7 * 24 * 3600,
+    )
+    await _log_audit(user, "user.login", "user", user.user_id)
+    return {"user": user.model_dump(mode="json"), "session_token": session_token}
+
+
+@auth_router.get("/me")
+async def me(user: User = Depends(get_current_user)):
+    return user.model_dump(mode="json")
+
+
+@auth_router.post("/logout")
+async def logout(request: Request, response: Response):
+    token = request.cookies.get("session_token") or ""
+    if token:
+        await delete_session(token)
+    response.delete_cookie("session_token", path="/")
+    return {"ok": True}
+
+
+# ============================================================================
+# DASHBOARD (aggregated KPIs)
+# ============================================================================
+dashboard_router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+@dashboard_router.get("/overview")
+async def overview(env: str = "production", user: User = Depends(get_current_user)):
+    fund_filter = {"environment": env}
+    funds = await col(FUNDS).find(fund_filter, {"_id": 0}).to_list(50)
+    aum = sum(f.get("circulating_supply", 0) * f.get("nav_per_token", 1) for f in funds)
+    total_supply = sum(f.get("total_supply", 0) for f in funds)
+    circ = sum(f.get("circulating_supply", 0) for f in funds)
+
+    active_orgs = await col(ORGANIZATIONS).count_documents({"environment": env, "status": "active"})
+    active_investors_cursor = col(ORGANIZATIONS).find({"environment": env}, {"_id": 0, "active_investors": 1})
+    active_investors = sum([o.get("active_investors", 0) async for o in active_investors_cursor])
+
+    tx_today = await col(TRANSACTIONS).count_documents({
+        "environment": env,
+        "created_at": {"$gte": (now_utc() - timedelta(hours=24)).isoformat()}
+    })
+    pending_recon = await col(RECONCILIATION).count_documents({"status": {"$ne": "matched"}})
+    open_onboarding = await col(ONBOARDING).count_documents({"status": {"$in": ["submitted", "under_review", "needs_info"]}})
+    open_alerts = await col(ALERTS).count_documents({"resolved": False})
+
+    # NAV series (last 14 days) — pick primary fund
+    primary = next((f for f in funds if f.get("code") == "PROS"), funds[0] if funds else None)
+    nav_series = []
+    if primary:
+        navs = await col(NAV_SNAPSHOTS).find(
+            {"fund_id": primary["fund_id"]},
+            {"_id": 0}
+        ).sort("as_of", 1).to_list(60)
+        nav_series = [{"as_of": n["as_of"], "nav": n["nav_per_token"]} for n in navs]
+
+    # Tx volume by day (14d)
+    cutoff = (now_utc() - timedelta(days=14)).isoformat()
+    txs = await col(TRANSACTIONS).find(
+        {"environment": env, "created_at": {"$gte": cutoff}},
+        {"_id": 0, "created_at": 1, "amount": 1, "type": 1}
+    ).to_list(5000)
+    by_day: Dict[str, float] = {}
+    for t in txs:
+        d = t["created_at"][:10]
+        by_day[d] = by_day.get(d, 0) + float(t.get("amount", 0))
+    vol_series = [{"date": d, "volume": v} for d, v in sorted(by_day.items())]
+
+    # Yield paid (sum of claim transactions last 30d)
+    claim_cutoff = (now_utc() - timedelta(days=30)).isoformat()
+    yield_txs = await col(TRANSACTIONS).find(
+        {"environment": env, "type": "claim", "created_at": {"$gte": claim_cutoff}},
+        {"_id": 0, "amount": 1}
+    ).to_list(10000)
+    yield_paid = sum(float(t.get("amount", 0)) for t in yield_txs)
+
+    return {
+        "environment": env,
+        "kpis": {
+            "aum_usd": aum,
+            "total_supply": total_supply,
+            "circulating_supply": circ,
+            "active_orgs": active_orgs,
+            "active_investors": active_investors,
+            "tx_24h": tx_today,
+            "pending_reconciliation": pending_recon,
+            "open_onboarding": open_onboarding,
+            "open_alerts": open_alerts,
+            "yield_paid_30d": yield_paid,
+        },
+        "nav_series": nav_series,
+        "volume_series": vol_series,
+        "primary_fund_code": primary["code"] if primary else None,
+    }
+
+
+# ============================================================================
+# ORGANIZATIONS (clients)
+# ============================================================================
+orgs_router = APIRouter(prefix="/organizations", tags=["organizations"])
+
+
+@orgs_router.get("")
+async def list_orgs(
+    env: Optional[str] = None,
+    search: Optional[str] = None,
+    type: Optional[str] = None,
+    status: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    q: Dict[str, Any] = {}
+    if env:
+        q["environment"] = env
+    if type:
+        q["type"] = type
+    if status:
+        q["status"] = status
+    if search:
+        q["name"] = {"$regex": search, "$options": "i"}
+    items = await col(ORGANIZATIONS).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items, "total": len(items)}
+
+
+@orgs_router.get("/{org_id}")
+async def get_org(org_id: str, user: User = Depends(get_current_user)):
+    doc = await col(ORGANIZATIONS).find_one({"org_id": org_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Org not found")
+    # Extras
+    apps = await col(API_APPS).count_documents({"org_id": org_id})
+    keys = await col(API_KEYS).count_documents({"org_id": org_id, "status": "active"})
+    hooks = await col(WEBHOOK_ENDPOINTS).count_documents({"org_id": org_id, "status": "active"})
+    positions_count = await col(POSITIONS).count_documents({"org_id": org_id})
+    tx_count = await col(TRANSACTIONS).count_documents({"org_id": org_id})
+    doc.update({
+        "counts": {"apps": apps, "keys": keys, "hooks": hooks,
+                   "positions": positions_count, "tx": tx_count}
+    })
+    return doc
+
+
+class OrgCreate(BaseModel):
+    name: str
+    legal_name: Optional[str] = None
+    type: str = "partner"
+    country: Optional[str] = None
+    contact_email: Optional[str] = None
+    environment: str = "sandbox"
+
+
+@orgs_router.post("")
+async def create_org(body: OrgCreate, user: User = Depends(require_roles("super_admin", "ops"))):
+    doc = {
+        "org_id": f"org_{new_id()}",
+        **body.model_dump(),
+        "status": "active",
+        "aum_usd": 0, "active_investors": 0,
+        "is_demo": False,
+        "created_at": now_utc().isoformat(),
+    }
+    await col(ORGANIZATIONS).insert_one(dict(doc))
+    await _log_audit(user, "org.create", "organization", doc["org_id"])
+    _strip_id(doc)
+    return doc
+
+
+# ============================================================================
+# ONBOARDING
+# ============================================================================
+ob_router = APIRouter(prefix="/onboarding", tags=["onboarding"])
+
+
+@ob_router.get("")
+async def list_cases(
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    q: Dict[str, Any] = {}
+    if status:
+        q["status"] = status
+    if search:
+        q["applicant_name"] = {"$regex": search, "$options": "i"}
+    items = await col(ONBOARDING).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items, "total": len(items)}
+
+
+@ob_router.get("/{case_id}")
+async def get_case(case_id: str, user: User = Depends(get_current_user)):
+    c = await col(ONBOARDING).find_one({"case_id": case_id}, {"_id": 0})
+    if not c:
+        raise HTTPException(404, "Case not found")
+    review = await col(COMPLIANCE).find_one({"case_id": case_id}, {"_id": 0})
+    return {"case": c, "compliance": review}
+
+
+class CaseUpdate(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    progress: Optional[int] = None
+
+
+@ob_router.patch("/{case_id}")
+async def update_case(case_id: str, body: CaseUpdate,
+                      user: User = Depends(require_roles("super_admin", "ops", "compliance"))):
+    patch: Dict[str, Any] = {"updated_at": now_utc().isoformat()}
+    for k, v in body.model_dump(exclude_none=True).items():
+        patch[k] = v
+    r = await col(ONBOARDING).update_one({"case_id": case_id}, {"$set": patch})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Case not found")
+    await _log_audit(user, f"onboarding.{body.status or 'update'}", "onboarding_case", case_id)
+    doc = await col(ONBOARDING).find_one({"case_id": case_id}, {"_id": 0})
+    return doc
+
+
+# ============================================================================
+# COMPLIANCE
+# ============================================================================
+comp_router = APIRouter(prefix="/compliance", tags=["compliance"])
+
+
+@comp_router.get("/queue")
+async def comp_queue(user: User = Depends(get_current_user)):
+    reviews = await col(COMPLIANCE).find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    # Attach case info
+    case_ids = list({r["case_id"] for r in reviews})
+    cases = await col(ONBOARDING).find({"case_id": {"$in": case_ids}}, {"_id": 0}).to_list(500)
+    by_id = {c["case_id"]: c for c in cases}
+    for r in reviews:
+        r["case"] = by_id.get(r["case_id"])
+    return {"items": reviews, "total": len(reviews)}
+
+
+class CompDecision(BaseModel):
+    decision: str
+    comments: Optional[str] = None
+
+
+@comp_router.post("/{review_id}/decide")
+async def decide(review_id: str, body: CompDecision,
+                 user: User = Depends(require_roles("super_admin", "compliance"))):
+    r = await col(COMPLIANCE).find_one({"review_id": review_id}, {"_id": 0})
+    if not r:
+        raise HTTPException(404, "Review not found")
+    await col(COMPLIANCE).update_one(
+        {"review_id": review_id},
+        {"$set": {"decision": body.decision, "comments": body.comments, "reviewer_id": user.user_id}}
+    )
+    # If approved, move case to approved
+    if body.decision == "approved":
+        await col(ONBOARDING).update_one(
+            {"case_id": r["case_id"]},
+            {"$set": {"status": "approved", "progress": 100}}
+        )
+    elif body.decision == "rejected":
+        await col(ONBOARDING).update_one(
+            {"case_id": r["case_id"]},
+            {"$set": {"status": "rejected", "progress": 100}}
+        )
+    await _log_audit(user, f"compliance.{body.decision}", "compliance_review", review_id)
+    return {"ok": True}
+
+
+# ============================================================================
+# FUNDS + PRODUCTS
+# ============================================================================
+funds_router = APIRouter(prefix="/funds", tags=["funds"])
+
+
+@funds_router.get("")
+async def list_funds(env: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if env:
+        q["environment"] = env
+    items = await col(FUNDS).find(q, {"_id": 0}).to_list(100)
+    for f in items:
+        f["products"] = await col(PRODUCTS).find({"fund_id": f["fund_id"]}, {"_id": 0}).to_list(50)
+    return {"items": items, "total": len(items)}
+
+
+@funds_router.get("/{fund_id}/nav")
+async def fund_nav(fund_id: str, user: User = Depends(get_current_user)):
+    items = await col(NAV_SNAPSHOTS).find(
+        {"fund_id": fund_id}, {"_id": 0}
+    ).sort("as_of", 1).to_list(500)
+    return {"items": items}
+
+
+class FundCreate(BaseModel):
+    code: str
+    name: str
+    underlying: str
+    home_domain: Optional[str] = None
+    initial_amount: float = 0
+    environment: str = "sandbox"
+
+
+@funds_router.post("")
+async def create_fund(body: FundCreate,
+                      user: User = Depends(require_roles("super_admin", "ops"))):
+    prosper_tx_id = str(uuid.uuid4())
+    proxy = await prosper_client.call("POST", "/v1/funds", {
+        "InitialAmount": str(body.initial_amount),
+        "homeDomain": body.home_domain or "prosper.foundation",
+        "prosperTxId": prosper_tx_id,
+    })
+    doc = {
+        "fund_id": f"fund_{new_id()}", "code": body.code, "name": body.name,
+        "underlying": body.underlying, "home_domain": body.home_domain,
+        "total_supply": body.initial_amount,
+        "circulating_supply": 0, "nav_per_token": 1.0,
+        "status": "active", "environment": body.environment,
+        "is_demo": False, "created_at": now_utc().isoformat(),
+    }
+    await col(FUNDS).insert_one(dict(doc))
+    await _log_audit(user, "fund.create", "fund", doc["fund_id"], environment=body.environment,
+                     metadata={"prosper_tx_id": prosper_tx_id, "proxy": proxy})
+    _strip_id(doc)
+    return {"fund": doc, "prosper_tx_id": prosper_tx_id, "proxy": proxy}
+
+
+products_router = APIRouter(prefix="/products", tags=["products"])
+
+
+@products_router.get("")
+async def list_products(user: User = Depends(get_current_user)):
+    items = await col(PRODUCTS).find({}, {"_id": 0}).to_list(200)
+    return {"items": items, "total": len(items)}
+
+
+# ============================================================================
+# POSITIONS
+# ============================================================================
+pos_router = APIRouter(prefix="/positions", tags=["positions"])
+
+
+@pos_router.get("")
+async def list_positions(
+    org_id: Optional[str] = None,
+    status: Optional[str] = None,
+    product_id: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    q: Dict[str, Any] = {}
+    if org_id:
+        q["org_id"] = org_id
+    if status:
+        q["status"] = status
+    if product_id:
+        q["product_id"] = product_id
+    items = await col(POSITIONS).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items, "total": len(items)}
+
+
+# ============================================================================
+# TREASURY
+# ============================================================================
+treas_router = APIRouter(prefix="/treasury", tags=["treasury"])
+
+
+@treas_router.get("/accounts")
+async def list_accounts(env: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if env:
+        q["environment"] = env
+    items = await col(TREASURY).find(q, {"_id": 0}).to_list(100)
+    return {"items": items, "total": len(items)}
+
+
+# ============================================================================
+# TRANSACTIONS
+# ============================================================================
+tx_router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+@tx_router.get("")
+async def list_tx(
+    env: Optional[str] = None,
+    type: Optional[str] = None,
+    status: Optional[str] = None,
+    org_id: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 200,
+    user: User = Depends(get_current_user),
+):
+    q: Dict[str, Any] = {}
+    if env:
+        q["environment"] = env
+    if type:
+        q["type"] = type
+    if status:
+        q["status"] = status
+    if org_id:
+        q["org_id"] = org_id
+    if search:
+        q["$or"] = [
+            {"tx_hash": {"$regex": search, "$options": "i"}},
+            {"prosper_tx_id": {"$regex": search, "$options": "i"}},
+            {"memo": {"$regex": search, "$options": "i"}},
+        ]
+    items = await col(TRANSACTIONS).find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return {"items": items, "total": len(items)}
+
+
+class MintRequest(BaseModel):
+    fund_id: str
+    amount: float
+    reason: str
+
+
+@tx_router.post("/mint")
+async def mint(body: MintRequest, user: User = Depends(require_roles("super_admin", "ops", "finance"))):
+    prosper_tx_id = str(uuid.uuid4())
+    proxy = await prosper_client.call("POST", "/v1/tokens/mint", {
+        "amount": str(body.amount), "reason": body.reason, "prosperTxId": prosper_tx_id,
+    })
+    tx_hash = (proxy.get("data") or {}).get("txHash") if proxy.get("proxied") else \
+              hashlib.sha256(prosper_tx_id.encode()).hexdigest()
+    doc = {
+        "tx_id": f"tx_{new_id()}", "prosper_tx_id": prosper_tx_id,
+        "fund_id": body.fund_id, "type": "mint", "amount": body.amount,
+        "asset_code": "PROS", "from_address": None, "to_address": "treasury",
+        "memo": prosper_tx_id, "tx_hash": tx_hash,
+        "status": "submitted" if proxy.get("proxied") else "pending",
+        "metadata": {"reason": body.reason, "proxy": proxy},
+        "environment": "production", "is_demo": False,
+        "created_at": now_utc().isoformat(),
+    }
+    await col(TRANSACTIONS).insert_one(dict(doc))
+    await _log_audit(user, "tx.mint", "transaction", doc["tx_id"],
+                     metadata={"prosper_tx_id": prosper_tx_id, "amount": body.amount})
+    _strip_id(doc)
+    return {"transaction": doc, "proxy": proxy}
+
+
+# ============================================================================
+# RECONCILIATION
+# ============================================================================
+recon_router = APIRouter(prefix="/reconciliation", tags=["reconciliation"])
+
+
+@recon_router.get("")
+async def list_recon(
+    status: Optional[str] = None,
+    user: User = Depends(get_current_user),
+):
+    q: Dict[str, Any] = {}
+    if status:
+        q["status"] = status
+    items = await col(RECONCILIATION).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # Join tx by prosper_tx_id
+    p_ids = [r["prosper_tx_id"] for r in items]
+    tx_map = {}
+    if p_ids:
+        async for t in col(TRANSACTIONS).find({"prosper_tx_id": {"$in": p_ids}}, {"_id": 0}):
+            tx_map[t["prosper_tx_id"]] = t
+    for r in items:
+        r["tx"] = tx_map.get(r["prosper_tx_id"])
+    return {"items": items, "total": len(items)}
+
+
+@recon_router.post("/{recon_id}/resolve")
+async def resolve_recon(recon_id: str, user: User = Depends(require_roles("super_admin", "ops", "finance"))):
+    r = await col(RECONCILIATION).update_one(
+        {"recon_id": recon_id},
+        {"$set": {"status": "resolved", "discrepancy": None}}
+    )
+    if r.matched_count == 0:
+        raise HTTPException(404, "Record not found")
+    await _log_audit(user, "recon.resolve", "reconciliation", recon_id)
+    return {"ok": True}
+
+
+# ============================================================================
+# API APPS / KEYS / WEBHOOKS
+# ============================================================================
+int_router = APIRouter(prefix="/integrations", tags=["integrations"])
+
+
+@int_router.get("/apps")
+async def list_apps(org_id: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if org_id:
+        q["org_id"] = org_id
+    items = await col(API_APPS).find(q, {"_id": 0}).to_list(200)
+    return {"items": items, "total": len(items)}
+
+
+class AppCreate(BaseModel):
+    org_id: str
+    name: str
+    description: Optional[str] = None
+    environment: str = "sandbox"
+
+
+@int_router.post("/apps")
+async def create_app(body: AppCreate, user: User = Depends(require_roles("super_admin", "ops", "client_admin"))):
+    doc = {
+        "app_id": f"app_{new_id()}", **body.model_dump(),
+        "status": "active", "is_demo": False,
+        "created_at": now_utc().isoformat(),
+    }
+    await col(API_APPS).insert_one(dict(doc))
+    await _log_audit(user, "app.create", "api_app", doc["app_id"])
+    _strip_id(doc)
+    return doc
+
+
+@int_router.get("/keys")
+async def list_keys(org_id: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if org_id:
+        q["org_id"] = org_id
+    items = await col(API_KEYS).find(q, {"_id": 0}).to_list(200)
+    return {"items": items, "total": len(items)}
+
+
+class KeyCreate(BaseModel):
+    app_id: str
+    org_id: str
+    label: str
+    scopes: List[str] = []
+    environment: str = "sandbox"
+
+
+@int_router.post("/keys")
+async def create_key(body: KeyCreate, user: User = Depends(require_roles("super_admin", "ops", "client_admin", "developer"))):
+    raw = f"pk_{body.environment[:4]}_{secrets.token_urlsafe(32)}"
+    doc = {
+        "key_id": f"key_{new_id()}", **body.model_dump(),
+        "key_prefix": raw[:16] + "...",
+        "key_hash": hashlib.sha256(raw.encode()).hexdigest(),
+        "status": "active", "last_used_at": None,
+        "is_demo": False, "created_at": now_utc().isoformat(),
+    }
+    await col(API_KEYS).insert_one(dict(doc))
+    await _log_audit(user, "apikey.create", "api_key", doc["key_id"])
+    # Return the raw key ONCE (never stored in plaintext)
+    _strip_id(doc)
+    return {"api_key_plaintext": raw, **doc}
+
+
+@int_router.post("/keys/{key_id}/revoke")
+async def revoke_key(key_id: str, user: User = Depends(require_roles("super_admin", "ops", "client_admin"))):
+    r = await col(API_KEYS).update_one({"key_id": key_id}, {"$set": {"status": "revoked"}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Key not found")
+    await _log_audit(user, "apikey.revoke", "api_key", key_id)
+    return {"ok": True}
+
+
+@int_router.get("/webhooks")
+async def list_webhooks(org_id: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if org_id:
+        q["org_id"] = org_id
+    items = await col(WEBHOOK_ENDPOINTS).find(q, {"_id": 0}).to_list(200)
+    return {"items": items, "total": len(items)}
+
+
+class HookCreate(BaseModel):
+    app_id: str
+    org_id: str
+    url: str
+    events: List[str] = []
+    environment: str = "sandbox"
+
+
+@int_router.post("/webhooks")
+async def create_webhook(body: HookCreate, user: User = Depends(require_roles("super_admin", "ops", "client_admin", "developer"))):
+    doc = {
+        "endpoint_id": f"hook_{new_id()}", **body.model_dump(),
+        "secret_prefix": "whsec_" + secrets.token_urlsafe(16),
+        "status": "active", "is_demo": False,
+        "created_at": now_utc().isoformat(),
+    }
+    await col(WEBHOOK_ENDPOINTS).insert_one(dict(doc))
+    await _log_audit(user, "webhook.create", "webhook_endpoint", doc["endpoint_id"])
+    _strip_id(doc)
+    return doc
+
+
+@int_router.get("/webhooks/{endpoint_id}/deliveries")
+async def webhook_deliveries(endpoint_id: str, user: User = Depends(get_current_user)):
+    items = await col(WEBHOOK_DELIVERIES).find(
+        {"endpoint_id": endpoint_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(200)
+    return {"items": items, "total": len(items)}
+
+
+# ============================================================================
+# ALERTS / REPORTS / AUDIT
+# ============================================================================
+misc_router = APIRouter(tags=["misc"])
+
+
+@misc_router.get("/alerts")
+async def list_alerts(resolved: Optional[bool] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if resolved is not None:
+        q["resolved"] = resolved
+    items = await col(ALERTS).find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"items": items, "total": len(items)}
+
+
+@misc_router.post("/alerts/{alert_id}/resolve")
+async def resolve_alert(alert_id: str, user: User = Depends(require_roles("super_admin", "ops"))):
+    r = await col(ALERTS).update_one({"alert_id": alert_id}, {"$set": {"resolved": True}})
+    if r.matched_count == 0:
+        raise HTTPException(404, "Alert not found")
+    await _log_audit(user, "alert.resolve", "alert", alert_id)
+    return {"ok": True}
+
+
+@misc_router.get("/reports")
+async def list_reports(kind: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if kind:
+        q["kind"] = kind
+    items = await col(REPORTS).find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"items": items, "total": len(items)}
+
+
+@misc_router.get("/audit-logs")
+async def list_audit(
+    actor_email: Optional[str] = None,
+    action: Optional[str] = None,
+    resource: Optional[str] = None,
+    limit: int = 200,
+    user: User = Depends(get_current_user),
+):
+    q: Dict[str, Any] = {}
+    if actor_email:
+        q["actor_email"] = {"$regex": actor_email, "$options": "i"}
+    if action:
+        q["action"] = {"$regex": action, "$options": "i"}
+    if resource:
+        q["resource"] = resource
+    items = await col(AUDIT_LOGS).find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    return {"items": items, "total": len(items)}
+
+
+# ============================================================================
+# END CUSTOMERS (for partner orgs)
+# ============================================================================
+ec_router = APIRouter(prefix="/end-customers", tags=["end-customers"])
+
+
+@ec_router.get("")
+async def list_ecs(org_id: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if org_id:
+        q["org_id"] = org_id
+    items = await col(END_CUSTOMERS).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items, "total": len(items)}
+
+
+# ============================================================================
+# USERS / ADMIN
+# ============================================================================
+users_router = APIRouter(prefix="/users", tags=["users"])
+
+
+@users_router.get("")
+async def list_users(user: User = Depends(get_current_user)):
+    items = await col(USERS).find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {"items": items, "total": len(items)}
+
+
+class RoleUpdate(BaseModel):
+    platform_role: str
+    org_id: Optional[str] = None
+
+
+@users_router.patch("/{user_id}")
+async def update_user(user_id: str, body: RoleUpdate,
+                      user: User = Depends(require_roles("super_admin"))):
+    await col(USERS).update_one({"user_id": user_id}, {"$set": body.model_dump(exclude_none=True)})
+    await _log_audit(user, "user.role_update", "user", user_id, metadata=body.model_dump())
+    return {"ok": True}
+
+
+# ============================================================================
+# SEED / ADMIN
+# ============================================================================
+admin_router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@admin_router.post("/seed")
+async def run_seed(force: bool = False, user: Optional[User] = None):
+    # Open-access seeding (no auth) because it's demo data, and first-time
+    # bootstrap might run before any user exists. Safe because it only adds
+    # data tagged is_demo=true.
+    return await seed_module.seed_all(force=force)
+
+
+@admin_router.post("/wipe-demo")
+async def wipe_demo_endpoint(user: User = Depends(require_roles("super_admin"))):
+    await seed_module.wipe_demo()
+    await _log_audit(user, "admin.wipe_demo", "system")
+    return {"ok": True}
+
+
+# Aggregate all routers
+ALL_ROUTERS = [
+    auth_router, dashboard_router, orgs_router, ob_router, comp_router,
+    funds_router, products_router, pos_router, treas_router, tx_router,
+    recon_router, int_router, misc_router, ec_router, users_router, admin_router,
+]
