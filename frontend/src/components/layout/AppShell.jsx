@@ -127,7 +127,7 @@ export default function AppShell({ children, surface = "backoffice" }) {
                     cn("nav-item flex items-center gap-3 px-4 py-2.5 text-sm text-[#888] hover:bg-[#0f0f0f] hover:text-white border-l-2 border-transparent",
                       isActive && "")
                   }
-                  data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  data-testid={`nav-${item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`}
                 >
                   {({ isActive }) => (
                     <div
