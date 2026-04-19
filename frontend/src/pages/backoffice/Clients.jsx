@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { PageHeader, StatusBadge, EnvPill, EmptyState } from "@/components/common";
+import FormDialog from "@/components/FormDialog";
 import { fmtMoney, fmtDate, fmtNum } from "@/lib/format";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MagnifyingGlass } from "@phosphor-icons/react";
+import { MagnifyingGlass, Plus } from "@phosphor-icons/react";
+import { toast } from "sonner";
 
 export default function Clients() {
   const nav = useNavigate();
@@ -13,18 +16,34 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [type, setType] = useState("all");
   const [status, setStatus] = useState("all");
+  const [createOpen, setCreateOpen] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (type !== "all") params.set("type", type);
     if (status !== "all") params.set("status", status);
     api.get(`/organizations?${params}`).then(({ data }) => setItems(data.items || []));
-  }, [search, type, status]);
+  };
+
+  useEffect(() => { load(); }, [search, type, status]);
+
+  const createOrg = async (values) => {
+    const { data } = await api.post("/organizations", values);
+    toast.success(`Organization "${data.name}" created`);
+    load();
+  };
 
   return (
     <div data-testid="clients-page">
-      <PageHeader title="Clients" subtitle={`${items.length} organizations`} />
+      <PageHeader title="Clients" subtitle={`${items.length} organizations`}
+        actions={
+          <Button onClick={() => setCreateOpen(true)} data-testid="create-client-btn"
+                  className="rounded-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white gap-1.5">
+            <Plus size={14} weight="bold" /> New Client
+          </Button>
+        }
+      />
       <div className="flex gap-3 mb-4">
         <div className="relative flex-1 max-w-xs">
           <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-subtle)]" />
@@ -91,6 +110,33 @@ export default function Clients() {
           </table>
         </div>
       )}
+
+      <FormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="New Client Organization"
+        description="Create a new partner or institutional client."
+        submitLabel="Create Organization"
+        onSubmit={createOrg}
+        testId="create-client-dialog"
+        fields={[
+          { key: "name", label: "Commercial Name", required: true, placeholder: "Alemany Capital" },
+          { key: "legal_name", label: "Legal Name", placeholder: "Alemany Capital LLC" },
+          { key: "type", label: "Type", type: "select", default: "partner", required: true,
+            options: [
+              { value: "partner", label: "Partner" },
+              { value: "institutional", label: "Institutional" },
+              { value: "internal", label: "Internal" },
+            ]},
+          { key: "country", label: "Country (ISO2)", placeholder: "AR", default: "AR" },
+          { key: "contact_email", label: "Contact Email", type: "email", required: true },
+          { key: "environment", label: "Environment", type: "select", default: "sandbox",
+            options: [
+              { value: "sandbox", label: "Sandbox" },
+              { value: "production", label: "Production" },
+            ]},
+        ]}
+      />
     </div>
   );
 }

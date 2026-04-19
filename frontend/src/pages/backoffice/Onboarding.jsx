@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { PageHeader, StatusBadge, EmptyState } from "@/components/common";
+import FormDialog from "@/components/FormDialog";
 import { fmtDate, fmtNum, relativeTime } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { Plus } from "@phosphor-icons/react";
 
 export default function Onboarding() {
   const [items, setItems] = useState([]);
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = async () => {
     const params = new URLSearchParams();
@@ -39,9 +42,22 @@ export default function Onboarding() {
     load();
   };
 
+  const createCase = async (values) => {
+    await api.post("/onboarding", values);
+    toast.success("Onboarding case created");
+    load();
+  };
+
   return (
     <div data-testid="onboarding-page">
-      <PageHeader title="Onboarding Queue" subtitle={`${items.length} applications`} />
+      <PageHeader title="Onboarding Queue" subtitle={`${items.length} applications`}
+        actions={
+          <Button onClick={() => setCreateOpen(true)} data-testid="create-onboarding-btn"
+                  className="rounded-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white gap-1.5">
+            <Plus size={14} weight="bold" /> New Case
+          </Button>
+        }
+      />
       <div className="mb-4 flex gap-3">
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-[200px] bg-[var(--surface)] border-[var(--border)] rounded-md" data-testid="onboarding-filter">
@@ -124,10 +140,31 @@ export default function Onboarding() {
             <Button variant="outline" onClick={() => action("needs_info")} data-testid="case-needs-info"
                     className="border-[#FFAB00]/40 text-[var(--warning)] hover:bg-[#FFAB00]/10 rounded-sm">Request Info</Button>
             <Button onClick={() => action("approved")} data-testid="case-approve"
-                    className="bg-[#00C853] text-black hover:bg-[#00B84A] rounded-sm font-semibold">Approve</Button>
+                    className="bg-[var(--success)] text-white hover:opacity-90 rounded-full font-semibold">Approve</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <FormDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        title="New Onboarding Case"
+        description="Register a new KYC/KYB application."
+        submitLabel="Create Case"
+        onSubmit={createCase}
+        testId="create-onboarding-dialog"
+        fields={[
+          { key: "applicant_name", label: "Applicant Name", required: true },
+          { key: "applicant_email", label: "Email", type: "email", required: true },
+          { key: "applicant_type", label: "Type", type: "select", default: "individual",
+            options: [
+              { value: "individual", label: "Individual" },
+              { value: "entity", label: "Entity / Corporate" },
+            ]},
+          { key: "country", label: "Country (ISO2)", placeholder: "AR" },
+          { key: "notes", label: "Notes", type: "textarea", placeholder: "Optional context for reviewers" },
+        ]}
+      />
     </div>
   );
 }

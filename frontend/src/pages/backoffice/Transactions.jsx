@@ -2,28 +2,56 @@ import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { useApp } from "@/contexts/AppContext";
 import { PageHeader, StatusBadge, StellarLink, CopyField, EmptyState } from "@/components/common";
+import FormDialog from "@/components/FormDialog";
 import { fmtMoney, fmtDateTime } from "@/lib/format";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
+import { Coins } from "@phosphor-icons/react";
 
 export default function Transactions() {
   const { env } = useApp();
   const [items, setItems] = useState([]);
+  const [funds, setFunds] = useState([]);
   const [search, setSearch] = useState("");
   const [type, setType] = useState("all");
   const [status, setStatus] = useState("all");
+  const [mintOpen, setMintOpen] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     const params = new URLSearchParams({ env });
     if (search) params.set("search", search);
     if (type !== "all") params.set("type", type);
     if (status !== "all") params.set("status", status);
     api.get(`/transactions?${params}`).then(({ data }) => setItems(data.items || []));
+  };
+
+  useEffect(() => {
+    load();
+    api.get(`/funds?env=${env}`).then(({ data }) => setFunds(data.items || []));
   }, [search, type, status, env]);
+
+  const mint = async (values) => {
+    const { data } = await api.post("/transactions/mint", {
+      fund_id: values.fund_id,
+      amount: Number(values.amount),
+      reason: values.reason,
+    });
+    toast.success(`Mint submitted · prosperTxId: ${data.transaction.prosper_tx_id.slice(0, 8)}…`);
+    load();
+  };
 
   return (
     <div data-testid="transactions-page">
-      <PageHeader title="Transactions Ledger" subtitle={`${items.length} transactions · ${env}`} />
+      <PageHeader title="Transactions Ledger" subtitle={`${items.length} transactions · ${env}`}
+        actions={
+          <Button onClick={() => setMintOpen(true)} data-testid="mint-btn"
+                  className="rounded-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white gap-1.5">
+            <Coins size={14} weight="bold" /> Mint PROS
+          </Button>
+        }
+      />
       <div className="flex gap-3 mb-4">
         <Input placeholder="Search hash, prosperTxId, memo…"
                className="max-w-sm bg-[var(--surface)] border-[var(--border)] rounded-md font-mono text-xs"
@@ -77,6 +105,24 @@ export default function Transactions() {
           </table>
         </div>
       )}
+
+      <FormDialog
+        open={mintOpen}
+        onOpenChange={setMintOpen}
+        title="Mint PROS Tokens"
+        description="Issues new PROS tokens from the issuer account to the treasury. Requires finance/ops/admin role."
+        submitLabel="Submit Mint"
+        onSubmit={mint}
+        testId="mint-dialog"
+        fields={[
+          { key: "fund_id", label: "Fund", type: "select", required: true,
+            options: funds.map(f => ({ value: f.fund_id, label: `${f.code} · ${f.name} (${f.environment})` })) },
+          { key: "amount", label: "Amount (PROS)", type: "number", required: true, placeholder: "100000" },
+          { key: "reason", label: "Reason / Reference", required: true, type: "textarea",
+            placeholder: "Q1 2026 fund inflow — Quirón PyMEs subscription batch",
+            help: "This appears in the audit log. Be specific; compliance requires traceability." },
+        ]}
+      />
     </div>
   );
 }

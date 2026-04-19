@@ -49,6 +49,22 @@ async def _log_audit(actor: User | None, action: str, resource: str, resource_id
     })
 
 
+def _user_scope(user: User) -> Dict[str, Any]:
+    """Return a MongoDB filter dict that scopes queries to the user's org.
+
+    Internal Prosper staff (is_internal=True) see everything.
+    External users only see their own `org_id`.
+    """
+    if user.is_internal or user.platform_role == "super_admin":
+        return {}
+    return {"org_id": user.org_id or "__none__"}
+
+
+def _apply_scope(query: Dict[str, Any], user: User) -> Dict[str, Any]:
+    scope = _user_scope(user)
+    return {**query, **scope} if scope else query
+
+
 # ============================================================================
 # AUTH
 # ============================================================================
@@ -187,6 +203,9 @@ async def list_orgs(
         q["status"] = status
     if search:
         q["name"] = {"$regex": search, "$options": "i"}
+    # Non-internal users only see their own org
+    if not user.is_internal and user.org_id:
+        q["org_id"] = user.org_id
     items = await col(ORGANIZATIONS).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items, "total": len(items)}
 
@@ -419,6 +438,8 @@ async def list_positions(
         q["status"] = status
     if product_id:
         q["product_id"] = product_id
+    if not user.is_internal and user.org_id:
+        q["org_id"] = user.org_id
     items = await col(POSITIONS).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items, "total": len(items)}
 
@@ -469,6 +490,8 @@ async def list_tx(
             {"prosper_tx_id": {"$regex": search, "$options": "i"}},
             {"memo": {"$regex": search, "$options": "i"}},
         ]
+    if not user.is_internal and user.org_id:
+        q["org_id"] = user.org_id
     items = await col(TRANSACTIONS).find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
     return {"items": items, "total": len(items)}
 
@@ -553,6 +576,8 @@ async def list_apps(org_id: Optional[str] = None, user: User = Depends(get_curre
     q: Dict[str, Any] = {}
     if org_id:
         q["org_id"] = org_id
+    if not user.is_internal and user.org_id:
+        q["org_id"] = user.org_id
     items = await col(API_APPS).find(q, {"_id": 0}).to_list(200)
     return {"items": items, "total": len(items)}
 
@@ -625,6 +650,8 @@ async def list_webhooks(org_id: Optional[str] = None, user: User = Depends(get_c
     q: Dict[str, Any] = {}
     if org_id:
         q["org_id"] = org_id
+    if not user.is_internal and user.org_id:
+        q["org_id"] = user.org_id
     items = await col(WEBHOOK_ENDPOINTS).find(q, {"_id": 0}).to_list(200)
     return {"items": items, "total": len(items)}
 
@@ -722,6 +749,8 @@ async def list_ecs(org_id: Optional[str] = None, user: User = Depends(get_curren
     q: Dict[str, Any] = {}
     if org_id:
         q["org_id"] = org_id
+    if not user.is_internal and user.org_id:
+        q["org_id"] = user.org_id
     items = await col(END_CUSTOMERS).find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return {"items": items, "total": len(items)}
 
@@ -770,6 +799,264 @@ async def wipe_demo_endpoint(user: User = Depends(require_roles("super_admin")))
     await seed_module.wipe_demo()
     await _log_audit(user, "admin.wipe_demo", "system")
     return {"ok": True}
+
+
+# ============================================================================
+# P0 EXTRA ENDPOINTS — Subscribe/Redeem + missing CRUD
+# ============================================================================
+
+# ---- Subscribe / Redeem (core business flow) ----
+class SubscribeRequest(BaseModel):
+    org_id: str
+    product_id: str
+    amount: float
+    user_reference_id: Optional[str] = None
+
+
+@pos_router.post("/subscribe")
+async def subscribe(body: SubscribeRequest, user: User = Depends(get_current_user)):
+    """Subscribe to a product — creates a position and a `subscribe` transaction.
+
+    Flow: USDC in → PROS out from Treasury to user account. Uses prosperTxId as idempotency anchor.
+    """
+    # Non-internal user can only subscribe on behalf of own org
+    if not user.is_internal and body.org_id != user.org_id:
+        raise HTTPException(403, "Cannot subscribe on behalf of another org")
+
+    product = await col(PRODUCTS).find_one({"product_id": body.product_id}, {"_id": 0})
+    if not product:
+        raise HTTPException(404, "Product not found")
+    if body.amount < (product.get("min_amount") or 0):
+        raise HTTPException(400, f"Amount below minimum of {product.get('min_amount')}")
+
+    fund = await col(FUNDS).find_one({"fund_id": product["fund_id"]}, {"_id": 0})
+    prosper_tx_id = str(uuid.uuid4())
+    now = now_utc()
+    maturity = None
+    if product.get("term_days"):
+        maturity = now + timedelta(days=product["term_days"])
+
+    # 1) Call upstream Prosper (proxy). If disabled, returns simulated response.
+    proxy = await prosper_client.call("POST", "/v1/users/deposit", {
+        "userReferenceId": body.user_reference_id or f"user_{user.user_id}",
+        "amount": str(body.amount),
+        "prosperTxId": prosper_tx_id,
+    })
+    tx_hash = (proxy.get("data") or {}).get("txHash") if proxy.get("proxied") else \
+              hashlib.sha256(prosper_tx_id.encode()).hexdigest()
+
+    # 2) Create position
+    position = {
+        "position_id": f"pos_{new_id()}",
+        "org_id": body.org_id,
+        "user_reference_id": body.user_reference_id or f"user_{user.user_id}",
+        "product_id": body.product_id,
+        "fund_id": product["fund_id"],
+        "principal": body.amount,
+        "accrued_interest": 0.0, "claimed_interest": 0.0,
+        "start_date": now.isoformat(),
+        "maturity_date": maturity.isoformat() if maturity else None,
+        "status": "active",
+        "stellar_address": (proxy.get("data") or {}).get("address"),
+        "is_demo": False,
+        "created_at": now.isoformat(),
+    }
+    await col(POSITIONS).insert_one(dict(position))
+
+    # 3) Create transaction
+    tx = {
+        "tx_id": f"tx_{new_id()}",
+        "prosper_tx_id": prosper_tx_id,
+        "org_id": body.org_id,
+        "user_reference_id": position["user_reference_id"],
+        "position_id": position["position_id"],
+        "fund_id": product["fund_id"],
+        "product_id": body.product_id,
+        "type": "subscribe",
+        "amount": body.amount,
+        "asset_code": "PROS",
+        "from_address": fund.get("treasury_address") if fund else None,
+        "to_address": position["stellar_address"],
+        "memo": prosper_tx_id,
+        "tx_hash": tx_hash,
+        "status": "submitted" if proxy.get("proxied") else "confirmed",
+        "metadata": {"proxy": proxy},
+        "environment": fund.get("environment", "sandbox") if fund else "sandbox",
+        "is_demo": False,
+        "created_at": now.isoformat(),
+    }
+    await col(TRANSACTIONS).insert_one(dict(tx))
+
+    # 4) Reconciliation stub
+    await col(RECONCILIATION).insert_one({
+        "recon_id": f"rec_{new_id()}", "prosper_tx_id": prosper_tx_id,
+        "onchain_match": proxy.get("proxied", False),
+        "offchain_match": True, "tx_hash": tx_hash,
+        "status": "matched" if proxy.get("proxied") else "investigating",
+        "is_demo": False, "created_at": now.isoformat(),
+    })
+
+    await _log_audit(user, "position.subscribe", "position", position["position_id"],
+                     metadata={"prosper_tx_id": prosper_tx_id, "amount": body.amount,
+                               "product_id": body.product_id})
+    _strip_id(position); _strip_id(tx)
+    return {"position": position, "transaction": tx, "prosper_tx_id": prosper_tx_id, "proxy": proxy}
+
+
+@pos_router.post("/{position_id}/redeem")
+async def redeem(position_id: str, user: User = Depends(get_current_user)):
+    """Redeem a matured (or early) position — PROS back to Treasury + principal+interest out."""
+    p = await col(POSITIONS).find_one({"position_id": position_id}, {"_id": 0})
+    if not p:
+        raise HTTPException(404, "Position not found")
+    if p["status"] in ("redeemed", "cancelled"):
+        raise HTTPException(400, f"Position already {p['status']}")
+    if not user.is_internal and p.get("org_id") != user.org_id:
+        raise HTTPException(403, "Not your position")
+
+    prosper_tx_id = str(uuid.uuid4())
+    total_payout = float(p.get("principal", 0)) + float(p.get("accrued_interest", 0))
+    now = now_utc()
+
+    proxy = await prosper_client.call("POST", "/v1/users/withdraw", {
+        "userReferenceId": p.get("user_reference_id"),
+        "amount": str(total_payout),
+        "prosperTxId": prosper_tx_id,
+    })
+    tx_hash = (proxy.get("data") or {}).get("txHash") if proxy.get("proxied") else \
+              hashlib.sha256(prosper_tx_id.encode()).hexdigest()
+
+    await col(POSITIONS).update_one(
+        {"position_id": position_id},
+        {"$set": {"status": "redeemed", "claimed_interest": p.get("accrued_interest", 0)}}
+    )
+
+    tx = {
+        "tx_id": f"tx_{new_id()}", "prosper_tx_id": prosper_tx_id,
+        "org_id": p.get("org_id"), "user_reference_id": p.get("user_reference_id"),
+        "position_id": position_id, "fund_id": p.get("fund_id"),
+        "product_id": p.get("product_id"),
+        "type": "redeem", "amount": total_payout, "asset_code": "USDC",
+        "from_address": p.get("stellar_address"),
+        "to_address": None,
+        "memo": prosper_tx_id, "tx_hash": tx_hash,
+        "status": "submitted" if proxy.get("proxied") else "confirmed",
+        "metadata": {"principal": p.get("principal"), "interest": p.get("accrued_interest"), "proxy": proxy},
+        "environment": "sandbox",
+        "is_demo": False, "created_at": now.isoformat(),
+    }
+    await col(TRANSACTIONS).insert_one(dict(tx))
+    await _log_audit(user, "position.redeem", "position", position_id,
+                     metadata={"prosper_tx_id": prosper_tx_id, "amount": total_payout})
+    _strip_id(tx)
+    return {"transaction": tx, "prosper_tx_id": prosper_tx_id, "proxy": proxy}
+
+
+# ---- Onboarding create (missing) ----
+class OnboardingCreate(BaseModel):
+    applicant_name: str
+    applicant_email: str
+    applicant_type: str = "individual"
+    country: Optional[str] = None
+    org_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@ob_router.post("")
+async def create_onboarding(body: OnboardingCreate,
+                            user: User = Depends(require_roles("super_admin", "ops", "compliance", "client_admin"))):
+    now = now_utc()
+    case_id = f"case_{new_id()}"
+    doc = {
+        "case_id": case_id, "org_id": body.org_id or user.org_id,
+        "applicant_name": body.applicant_name,
+        "applicant_email": body.applicant_email,
+        "applicant_type": body.applicant_type,
+        "country": body.country,
+        "status": "submitted",
+        "progress": 20,
+        "sla_due": (now + timedelta(hours=48)).isoformat(),
+        "risk_score": None, "notes": body.notes, "is_demo": False,
+        "created_at": now.isoformat(), "updated_at": now.isoformat(),
+    }
+    await col(ONBOARDING).insert_one(dict(doc))
+    # Also create an empty compliance review
+    await col(COMPLIANCE).insert_one({
+        "review_id": f"rev_{new_id()}", "case_id": case_id,
+        "kyc_status": "pending", "aml_check": "pending",
+        "sanctions_check": "pending", "pep_check": "pending", "travel_rule": "pending",
+        "decision": "pending", "is_demo": False, "created_at": now.isoformat(),
+    })
+    await _log_audit(user, "onboarding.create", "onboarding_case", case_id)
+    _strip_id(doc)
+    return doc
+
+
+# ---- Product create (missing) ----
+class ProductCreate(BaseModel):
+    fund_id: str
+    name: str
+    kind: str = "term_staking"
+    term_days: Optional[int] = None
+    apr_bps: int = 0
+    min_amount: float = 0
+    payout_asset: str = "USDC"
+    principal_asset: str = "PROS"
+
+
+@products_router.post("")
+async def create_product(body: ProductCreate,
+                         user: User = Depends(require_roles("super_admin", "ops", "finance"))):
+    doc = {
+        "product_id": f"prod_{new_id()}", **body.model_dump(),
+        "max_amount": None, "status": "active",
+        "is_demo": False, "created_at": now_utc().isoformat(),
+    }
+    await col(PRODUCTS).insert_one(dict(doc))
+    await _log_audit(user, "product.create", "product", doc["product_id"])
+    _strip_id(doc)
+    return doc
+
+
+# ---- Org user invite (missing) ----
+class OrgUserInvite(BaseModel):
+    email: str
+    name: str
+    role: str = "client_user"
+    org_id: str
+
+
+@users_router.post("/invite")
+async def invite_org_user(body: OrgUserInvite,
+                          user: User = Depends(require_roles("super_admin", "ops", "client_admin"))):
+    if not user.is_internal and body.org_id != user.org_id:
+        raise HTTPException(403, "Cannot invite users for another org")
+    existing = await col(ORG_USERS).find_one({"email": body.email.lower(), "org_id": body.org_id}, {"_id": 0})
+    if existing:
+        raise HTTPException(409, "User already invited")
+    doc = {
+        "org_user_id": f"ou_{new_id()}",
+        "org_id": body.org_id, "user_id": None,
+        "email": body.email.lower(), "name": body.name,
+        "role": body.role, "status": "invited",
+        "created_at": now_utc().isoformat(),
+    }
+    await col(ORG_USERS).insert_one(dict(doc))
+    await _log_audit(user, "user.invite", "org_user", doc["org_user_id"],
+                     metadata={"email": body.email, "role": body.role})
+    _strip_id(doc)
+    return doc
+
+
+@users_router.get("/org-members")
+async def list_org_members(org_id: Optional[str] = None, user: User = Depends(get_current_user)):
+    q: Dict[str, Any] = {}
+    if org_id:
+        q["org_id"] = org_id
+    elif not user.is_internal and user.org_id:
+        q["org_id"] = user.org_id
+    items = await col(ORG_USERS).find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"items": items, "total": len(items)}
 
 
 # Aggregate all routers

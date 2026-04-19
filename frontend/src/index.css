@@ -318,5 +318,12 @@ html.dark .env-pill[data-env="production"] {
 .bg-surface-2 { background: var(--surface-2); }
 .border-prosper { border-color: var(--border); }
 
+/* Ensure shadcn Button primary variant has high contrast in both themes */
+button.bg-\[var\(--primary\)\] {
+  color: var(--primary-fg) !important;
+}
+button.bg-\[var\(--primary\)\]:hover {
+  background-color: var(--primary-hover) !important;
+}
 /* Smooth Recharts animation */
 .recharts-surface { overflow: visible; }
