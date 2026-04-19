@@ -50,8 +50,7 @@ function InnerRouter() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-
-      <Route path="/" element={<Navigate to="/app" replace />} />
+      <Route path="/" element={<Login />} />
 
       {/* Backoffice */}
       <Route path="/app" element={<ProtectedRoute><AppShell surface="backoffice"><Dashboard /></AppShell></ProtectedRoute>} />
