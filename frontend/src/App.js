@@ -28,6 +28,7 @@ import Alerts from "@/pages/backoffice/Alerts";
 import Reports from "@/pages/backoffice/Reports";
 import UsersAdmin from "@/pages/backoffice/UsersAdmin";
 import AuditLog from "@/pages/backoffice/AuditLog";
+import Approvals from "@/pages/backoffice/Approvals";
 
 // Portal
 import PortalOverview from "@/pages/portal/Overview";
@@ -72,6 +73,7 @@ function InnerRouter() {
       <Route path="/app/reports" element={<ProtectedRoute><AppShell surface="backoffice"><Reports /></AppShell></ProtectedRoute>} />
       <Route path="/app/users" element={<ProtectedRoute><AppShell surface="backoffice"><UsersAdmin /></AppShell></ProtectedRoute>} />
       <Route path="/app/audit" element={<ProtectedRoute><AppShell surface="backoffice"><AuditLog /></AppShell></ProtectedRoute>} />
+      <Route path="/app/approvals" element={<ProtectedRoute><AppShell surface="backoffice"><Approvals /></AppShell></ProtectedRoute>} />
 
       {/* Client Portal */}
       <Route path="/portal" element={<ProtectedRoute><AppShell surface="portal"><PortalOverview /></AppShell></ProtectedRoute>} />

@@ -6,14 +6,17 @@ import {
   ChartBar, Buildings, UserCheck, ShieldCheck, Coins, Stack, Wallet,
   ArrowsLeftRight, Equals, Plugs, Key, LightningSlash, Bell, FileText,
   UsersThree, NotePencil, Gear, SignOut, ArrowsDownUp, House, User,
-  CurrencyDollar, Sun, Moon, ArrowSquareOut,
+  CurrencyDollar, Sun, Moon, ArrowSquareOut, ShieldCheckered,
 } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import api from "@/lib/api";
 
 const backofficeNav = [
   { to: "/app", label: "Dashboard", icon: ChartBar, end: true },
   { to: "/app/clients", label: "Clients", icon: Buildings },
   { to: "/app/onboarding", label: "Onboarding", icon: UserCheck },
   { to: "/app/compliance", label: "Compliance", icon: ShieldCheck },
+  { to: "/app/approvals", label: "Operations Queue", icon: ShieldCheckered, badge: "approvals" },
   { to: "/app/funds", label: "Funds", icon: Coins },
   { to: "/app/products", label: "Products", icon: Stack },
   { to: "/app/positions", label: "Positions", icon: NotePencil },
@@ -51,6 +54,18 @@ export default function AppShell({ children, surface = "backoffice" }) {
   const items = surface === "portal" ? portalNav : backofficeNav;
   const otherSurface = surface === "portal" ? "backoffice" : "portal";
 
+  // Pending approvals badge (internal staff only)
+  const [pendingApprovals, setPendingApprovals] = useState(0);
+  useEffect(() => {
+    if (surface !== "backoffice" || !user?.is_internal) return;
+    const load = () => api.get("/approvals/pending/count")
+      .then(({ data }) => setPendingApprovals(data.count || 0))
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [surface, user?.is_internal]);
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg)" }}>
       {/* Demo banner */}
@@ -70,6 +85,17 @@ export default function AppShell({ children, surface = "backoffice" }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Pending approvals pill */}
+          {surface === "backoffice" && user?.is_internal && pendingApprovals > 0 && (
+            <button onClick={() => navigate("/app/approvals")}
+                    className="flex items-center gap-1.5 px-3 h-9 rounded-full text-xs font-semibold"
+                    style={{ background: "var(--warning)", color: "#fff" }}
+                    data-testid="topbar-approvals-badge">
+              <ShieldCheckered size={14} weight="fill" />
+              {pendingApprovals} pending
+            </button>
+          )}
+
           {/* Env switcher */}
           <div className="flex items-center p-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)]" data-testid="env-switcher">
             <button
@@ -138,6 +164,7 @@ export default function AppShell({ children, surface = "backoffice" }) {
             {items.map((item) => {
               const Icon = item.icon;
               const slug = item.label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+              const badgeCount = item.badge === "approvals" ? pendingApprovals : 0;
               return (
                 <NavLink
                   key={item.to}
@@ -149,7 +176,14 @@ export default function AppShell({ children, surface = "backoffice" }) {
                   {({ isActive }) => (
                     <div data-active={isActive} className="nav-item">
                       <Icon size={17} weight={isActive ? "fill" : "regular"} />
-                      <span>{item.label}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {badgeCount > 0 && (
+                        <span className="ml-auto text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center"
+                              style={{ background: "var(--warning)", color: "#fff" }}
+                              data-testid={`badge-${slug}`}>
+                          {badgeCount}
+                        </span>
+                      )}
                     </div>
                   )}
                 </NavLink>

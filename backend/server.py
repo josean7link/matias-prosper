@@ -12,6 +12,7 @@ load_dotenv(ROOT_DIR / '.env')
 from routers import ALL_ROUTERS  # noqa: E402
 import seed as seed_module  # noqa: E402
 from db import col, FUNDS  # noqa: E402
+import workers  # noqa: E402
 
 app = FastAPI(title="Prosper Platform API", version="0.1.0")
 api_router = APIRouter(prefix="/api")
@@ -54,3 +55,16 @@ async def startup():
             await seed_module.seed_all()
     except Exception as e:
         logger.warning(f"Seed skipped: {e}")
+    # Start background workers
+    try:
+        workers.start_scheduler()
+    except Exception as e:
+        logger.warning(f"Scheduler not started: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    try:
+        workers.shutdown_scheduler()
+    except Exception:
+        pass
