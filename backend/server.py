@@ -13,6 +13,7 @@ from routers import ALL_ROUTERS  # noqa: E402
 import seed as seed_module  # noqa: E402
 from db import col, FUNDS  # noqa: E402
 import workers  # noqa: E402
+import storage  # noqa: E402
 
 app = FastAPI(title="Prosper Platform API", version="0.1.0")
 api_router = APIRouter(prefix="/api")
@@ -60,6 +61,11 @@ async def startup():
         workers.start_scheduler()
     except Exception as e:
         logger.warning(f"Scheduler not started: {e}")
+    # Initialize object storage
+    try:
+        storage.init_storage()
+    except Exception as e:
+        logger.warning(f"Storage init failed: {e}")
 
 
 @app.on_event("shutdown")

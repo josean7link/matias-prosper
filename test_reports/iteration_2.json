@@ -1,0 +1,42 @@
+{
+  "summary": "Iteration 2 — verified the Webhooks-icon compilation fix in DevPortal AND the new KYC/KYB Document upload feature backed by Emergent Object Storage. Backend: 11/11 pytest cases passed (upload PDF, list, download bytes, soft-delete, .exe rejection, .zip rejection, PNG upload, unauth rejection + 3 smoke regression tests for /auth/me, /organizations, /dashboard/overview). Frontend: /developers loads PUBLICLY (no auth needed), all 5 endpoint sidebar items (Authentication / Subscribe & Redeem / Mint / Webhooks / Transactions) update the right pane, language tabs (curl/javascript/python) switch the example code block. Portal /portal/organization renders the DocumentsPanel below the org info card with dropzone, browse btn, type-select dropdown, and shows the previously-uploaded file with Download + Delete buttons. Backoffice /app/clients/org_e0d081eab53d also renders the DocumentsPanel.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/documents/upload", "issue": "403 multi-tenant rejection (non-internal user uploading to another org) was NOT exercised — the only available test session is super_admin/internal which bypasses the check. Code path inspected and looks correct, but no live integration test."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_documents_api.py",
+    "/app/backend/tests/test_prosper_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/documents_results.xml"
+  ],
+  "action_items": [
+    "(Optional) Add a dedicated non-internal client user session to /app/memory/test_credentials.md so the 403 cross-org upload guard can be exercised end-to-end.",
+    "(Nit) DevPortal: when the language tab is changed, the example block updates but the heading/response don't — that's by design. No action."
+  ],
+  "critical_code_review_comments": [
+    "storage.py uses synchronous `requests` inside async FastAPI handlers — for KYC files up to 10 MB this can block the event loop; consider httpx.AsyncClient or running put_object/get_object in a thread executor.",
+    "/api/documents/{id}/download declares unused `auth` (Query) and `authorization` (Header) parameters — these are dead-code, can be removed; auth is fully handled by the `Depends(get_current_user)` cookie/Bearer logic.",
+    "Allowed extensions checked only by filename — for stronger validation, also sniff magic bytes (e.g., %PDF, PNG header) before accepting.",
+    "routers.py is now ~1480 lines; please split into /backend/routers/*.py per domain (the empty package already exists).",
+    "DocumentsPanel.jsx: when delete fails the spinner state is fine, but the dropzone has no aria-label/role for screen readers — accessibility nit."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (token now reads PROSPER_TEST_TOKEN env, default updated to active token)",
+    "/app/backend/tests/test_documents_api.py (created — 11 tests)"
+  ],
+  "success_rate": {"backend": "100% (11/11 documents + smoke)", "frontend": "100% (dev portal public + portal docs panel + backoffice docs panel verified)"},
+  "test_credentials": "Authorization: Bearer test_session_prosper_1776712095619 (super_admin demo.admin@prosper.foundation, internal staff). Test org used: org_e0d081eab53d (Alemany Capital).",
+  "seed_data_creation": "Each test uploads 1 PDF (~30 B) + 1 PNG (~70 B); the PDF is soft-deleted at the end, the PNG is hard-cleaned via DELETE inside the test. After the run there is exactly 1 lingering doc (kyc_test.pdf created during dev session) — matches the spec note that doc_a9af1b049a64 should be present for org_e0d081eab53d.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: PROSPER_TEST_TOKEN=<token> pytest /app/backend/tests/test_documents_api.py -v. Frontend public Dev Portal lives at /developers (no auth gate in App.js Route). DocumentsPanel data-testids: documents-panel, documents-dropzone, documents-browse-btn, documents-file-input, documents-type-select, document-row-{id}, document-download-{id}, document-delete-{id}. DevPortal data-testids: dev-portal, nav-endpoint-{id}, endpoint-{id}, lang-{curl|javascript|python}, copy-{id}.",
+  "rca of the issue": "No bugs reproduced. Webhooks icon compile-blocker is fixed (Plugs imported from @phosphor-icons/react, used in ENDPOINTS Webhooks section). Storage layer initialises lazily on first put/get via init_storage() and the live POST + GET round-trip preserves the original PDF bytes (md5 verified by exact byte equality)."
+}

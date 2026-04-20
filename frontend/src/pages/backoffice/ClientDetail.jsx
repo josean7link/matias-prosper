@@ -4,6 +4,7 @@ import api from "@/lib/api";
 import { PageHeader, StatusBadge, EnvPill, MetricBar, MetricCell, CopyField } from "@/components/common";
 import { fmtMoney, fmtNum, fmtDate } from "@/lib/format";
 import { ArrowLeft } from "@phosphor-icons/react";
+import DocumentsPanel from "@/components/DocumentsPanel";
 
 export default function ClientDetail() {
   const { id } = useParams();
@@ -104,6 +105,10 @@ export default function ClientDetail() {
             </tbody>
           </table>
         </section>
+      </div>
+
+      <div className="mt-3">
+        <DocumentsPanel orgId={id} title="KYC / KYB Documents" />
       </div>
     </div>
   );

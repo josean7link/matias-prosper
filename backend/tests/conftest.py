@@ -3,7 +3,7 @@ import pytest
 import requests
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "https://finance-control-215.preview.emergentagent.com").rstrip("/")
-TOKEN = "test_session_prosper_1776560271932"
+TOKEN = os.environ.get("PROSPER_TEST_TOKEN", "test_session_prosper_1776712095619")
 
 
 @pytest.fixture(scope="session")

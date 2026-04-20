@@ -5,7 +5,7 @@ import { useApp } from "@/contexts/AppContext";
 import { toast } from "sonner";
 import {
   ArrowUpRight, Copy, Check, Sun, Moon, Code, Lightning, ShieldCheck,
-  Webhooks, Key, CurrencyDollar, Book, ArrowRight, Terminal
+  Plugs, Key, CurrencyDollar, Book, ArrowRight, Terminal
 } from "@phosphor-icons/react";
 
 const ENDPOINTS = [
@@ -70,7 +70,7 @@ const ENDPOINTS = [
   },
   {
     section: "Webhooks",
-    icon: Webhooks,
+    icon: Plugs,
     items: [
       {
         id: "webhook-create", method: "POST", path: "/api/integrations/webhooks",
