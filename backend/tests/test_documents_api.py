@@ -5,8 +5,10 @@ import pytest
 import requests
 
 BASE = os.environ.get("REACT_APP_BACKEND_URL", "https://finance-control-215.preview.emergentagent.com").rstrip("/")
-TOKEN = os.environ.get("PROSPER_TEST_TOKEN", "test_session_prosper_1776712095619")
+TOKEN = os.environ.get("PROSPER_TEST_TOKEN", "test_session_prosper_super_admin")
+CLIENT_TOKEN = os.environ.get("PROSPER_CLIENT_TOKEN", "test_session_prosper_client_admin")
 HDR = {"Authorization": f"Bearer {TOKEN}"}
+CLIENT_HDR = {"Authorization": f"Bearer {CLIENT_TOKEN}"}
 
 # Tiny valid PDF (header bytes)
 PDF_BYTES = (
@@ -119,6 +121,34 @@ def test_unauthenticated_upload_rejected():
     data = {"org_id": "org_e0d081eab53d", "doc_type": "kyc"}
     r = requests.post(f"{BASE}/api/documents/upload", files=files, data=data, timeout=20)
     assert r.status_code in (401, 403)
+
+
+def test_client_admin_cannot_upload_to_other_org():
+    """Cross-org upload guard — non-internal user must be blocked with 403."""
+    # Find any org that is NOT the client's own (Alemany Capital)
+    r = requests.get(f"{BASE}/api/organizations", headers=HDR, timeout=15)
+    assert r.status_code == 200
+    others = [o["org_id"] for o in r.json().get("items", []) if o.get("name") != "Alemany Capital"]
+    assert others, "no non-Alemany org seeded"
+    other_org = others[0]
+
+    files = {"file": ("crossorg.pdf", io.BytesIO(PDF_BYTES), "application/pdf")}
+    data = {"org_id": other_org, "doc_type": "kyb"}
+    r2 = requests.post(f"{BASE}/api/documents/upload", files=files, data=data, headers=CLIENT_HDR, timeout=30)
+    assert r2.status_code == 403, f"expected 403 got {r2.status_code}: {r2.text[:200]}"
+
+
+def test_client_admin_can_upload_to_own_org():
+    """Client admin must still be allowed to upload to their own org (happy path)."""
+    files = {"file": ("own_org.pdf", io.BytesIO(PDF_BYTES), "application/pdf")}
+    # Do NOT pass org_id — endpoint should default to the caller's own org
+    data = {"doc_type": "kyc"}
+    r = requests.post(f"{BASE}/api/documents/upload", files=files, data=data, headers=CLIENT_HDR, timeout=30)
+    assert r.status_code == 200, f"own-org upload failed {r.status_code}: {r.text[:300]}"
+    body = r.json()
+    assert body["uploaded_by_email"] == "demo.client@alemany.capital"
+    # cleanup
+    requests.delete(f"{BASE}/api/documents/{body['document_id']}", headers=CLIENT_HDR, timeout=15)
 
 
 # Smoke regression: previously working endpoints still respond

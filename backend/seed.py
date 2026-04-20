@@ -12,7 +12,7 @@ from db import (
     col, ORGANIZATIONS, ONBOARDING, COMPLIANCE, FUNDS, PRODUCTS, NAV_SNAPSHOTS,
     TREASURY, POSITIONS, TRANSACTIONS, RECONCILIATION, API_APPS, API_KEYS,
     WEBHOOK_ENDPOINTS, WEBHOOK_DELIVERIES, ALERTS, REPORTS, AUDIT_LOGS,
-    END_CUSTOMERS, ORG_USERS
+    END_CUSTOMERS, ORG_USERS, USERS, SESSIONS
 )
 from models import now_utc, new_id
 
@@ -352,5 +352,75 @@ async def seed_all(force: bool = False):
         })
     await col(END_CUSTOMERS).insert_many(ecs)
 
+    # ---- Demo test users (super_admin + client_admin for automated testing) ----
+    await seed_demo_users(orgs)
+
     return {"status": "seeded", "orgs": len(orgs), "tx": len(txs),
             "positions": len(positions), "alerts": len(alerts)}
+
+
+# Fixed test tokens (only active when server is in demo mode). These are documented
+# in /app/memory/test_credentials.md so the testing agent can exercise cross-org
+# authorization guards without running through the Emergent OAuth loop.
+DEMO_SUPER_ADMIN = {
+    "user_id": "user_demo_prosper_admin",
+    "email": "demo.admin@prosper.foundation",
+    "name": "Demo Admin",
+    "picture": "https://ui-avatars.com/api/?name=Demo+Admin",
+    "platform_role": "super_admin",
+    "is_internal": True,
+    "mfa_enabled": False,
+    "org_id": None,
+    "session_token": "test_session_prosper_super_admin",
+}
+
+DEMO_CLIENT_ADMIN = {
+    "user_id": "user_demo_alemany_client",
+    "email": "demo.client@alemany.capital",
+    "name": "Demo Alemany Client",
+    "picture": "https://ui-avatars.com/api/?name=Alemany+Client",
+    "platform_role": "client_admin",
+    "is_internal": False,
+    "mfa_enabled": False,
+    "session_token": "test_session_prosper_client_admin",
+}
+
+
+async def seed_demo_users(orgs: list):
+    """Upsert two deterministic demo users with known session tokens.
+
+    - Super admin (internal) — bypasses org scope checks.
+    - Client admin (external) — tied to Alemany Capital; used to verify 403 cross-org
+      authorization guards in automated tests.
+    """
+    now = now_utc()
+    alemany = next((o for o in orgs if o.get("name") == "Alemany Capital"), None)
+    if not alemany:
+        return
+
+    users_to_seed = [
+        {**DEMO_SUPER_ADMIN, "org_id": None},
+        {**DEMO_CLIENT_ADMIN, "org_id": alemany["org_id"]},
+    ]
+
+    for u in users_to_seed:
+        token = u.pop("session_token")
+        await col(USERS).update_one(
+            {"user_id": u["user_id"]},
+            {"$set": {**u, "updated_at": now.isoformat()},
+             "$setOnInsert": {"created_at": now.isoformat(), "is_demo": True}},
+            upsert=True,
+        )
+        # Keep the session fresh (+7 days) on every seed
+        expires_at = (now + timedelta(days=7)).isoformat()
+        await col(SESSIONS).update_one(
+            {"session_token": token},
+            {"$set": {
+                "session_id": f"sess_demo_{u['user_id']}",
+                "user_id": u["user_id"],
+                "session_token": token,
+                "expires_at": expires_at,
+                "created_at": now.isoformat(),
+            }},
+            upsert=True,
+        )

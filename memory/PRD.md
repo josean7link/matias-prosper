@@ -33,7 +33,14 @@ platform works end-to-end with demo data.
 
 Users with email `@prosper.foundation` are auto-flagged internal + super_admin.
 
-## What's Implemented (updated 2026-04-20)
+## What's Implemented (updated 2026-04-21)
+
+### 2026-04-21 — Maintainability + Storage Performance + Test Coverage
+- **Router modularisation:** split the 1500-line `/app/backend/routers.py` into a `/app/backend/routers/` package — one file per domain (auth, dashboard, organizations, onboarding, compliance, funds, positions, treasury, transactions, reconciliation, integrations, misc, end_customers, users, admin, approvals, mfa, documents, search). Shared helpers live in `_helpers.py`. `server.py` still imports `ALL_ROUTERS` exactly as before.
+- **Async object storage:** `storage.py` rewritten on top of `httpx.AsyncClient` so the FastAPI event loop is no longer blocked by 10 MB uploads. `put_object` / `get_object` / `init_storage` are now awaitables. Documents router updated to await.
+- **Deterministic demo user seed:** new `seed.seed_demo_users()` upserts two users with fixed session tokens on every backend boot — `test_session_prosper_super_admin` (internal) and `test_session_prosper_client_admin` (tied to Alemany Capital). Enables automated tests to exercise multi-tenant 403 guards without OAuth.
+- **Prosper upstream diagnostic:** `GET /api/admin/prosper-upstream` (super_admin/ops) returns `{enabled, base_url, reachable, authenticated, error}` — so when network egress is opened the backoffice can verify the real Stellar API connectivity instantly without server restarts.
+- **Test suite grew to 42/42 green** — added `test_client_admin_cannot_upload_to_other_org` (403) + `test_client_admin_can_upload_to_own_org` (happy path) to `test_documents_api.py`.
 
 ### 2026-04-20 — Developer Portal + KYC Object Storage
 - **Public Developer Portal** at `/developers` (no auth) — hero, quickstart, endpoint reference with sidebar nav for Auth / Subscribe & Redeem / Mint (two-signer) / Webhooks / Transactions, live example code toggles between curl / javascript / python, plus a copy-to-clipboard button on every code block and a direct link to `/openapi.json`.
@@ -92,12 +99,10 @@ Login · Developer Portal (`/developers`)
 - Public Dev Portal + Documents Panel UI validated by testing agent
 
 ## P1 — Next Action Items
-1. Connect real Prosper Stellar Protocol APIs (blocked: firewall, returned HTTP 000 during test). Set `PROSPER_API_ENABLED=true` + creds once network unblocked.
-2. Split `backend/routers.py` (~1500 lines) into `backend/routers/*.py` per domain (empty package already exists).
-3. Switch `storage.py` from synchronous `requests` to `httpx.AsyncClient` or `asyncio.to_thread` (minor perf nit flagged by testing agent).
-4. Seed a non-internal test user so cross-org upload guard can be exercised via automation.
-5. Magic-byte sniffing on uploaded docs (in addition to extension check).
-6. Production email allowlist / organization onboarding flow.
+1. Connect real Prosper Stellar Protocol APIs — code path ready (`/app/backend/prosper_client.py` + `/api/admin/prosper-upstream` diagnostic), **blocked by network egress**: the pod cannot resolve `lb-backend-develop-1915190402.us-west-2.elb.amazonaws.com` (NXDOMAIN). Once the firewall/DNS is opened, set `PROSPER_API_ENABLED=true` in `backend/.env` and verify with `GET /api/admin/prosper-upstream`.
+2. Magic-byte sniffing on uploaded docs (in addition to extension check).
+3. Production email allowlist / organization onboarding flow.
+4. UI screens for the new `/api/admin/prosper-upstream` diagnostic (show status in the Integrations page).
 
 ## P2 — Enhancements
 - Sandbox with independent seed (fully separate from production seed)

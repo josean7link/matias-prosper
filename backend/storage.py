@@ -1,4 +1,4 @@
-"""Emergent Object Storage helper.
+"""Emergent Object Storage helper (async, uses httpx.AsyncClient).
 
 Session-scoped storage_key is initialized once at startup and reused across requests.
 Files are uploaded under the `prosper/` prefix to isolate this tenant's bucket namespace.
@@ -6,7 +6,7 @@ Files are uploaded under the `prosper/` prefix to isolate this tenant's bucket n
 from __future__ import annotations
 import os
 import logging
-import requests
+import httpx
 from typing import Tuple
 
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
@@ -16,7 +16,7 @@ _storage_key: str | None = None
 _logger = logging.getLogger("prosper.storage")
 
 
-def init_storage() -> str | None:
+async def init_storage() -> str | None:
     """Initialise once at startup; returns the session storage key."""
     global _storage_key
     if _storage_key:
@@ -26,9 +26,10 @@ def init_storage() -> str | None:
         _logger.warning("EMERGENT_LLM_KEY not set — object storage disabled.")
         return None
     try:
-        resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": key}, timeout=30)
-        resp.raise_for_status()
-        _storage_key = resp.json().get("storage_key")
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(f"{STORAGE_URL}/init", json={"emergent_key": key})
+            resp.raise_for_status()
+            _storage_key = resp.json().get("storage_key")
         _logger.info("Object storage initialized.")
         return _storage_key
     except Exception as e:
@@ -36,29 +37,31 @@ def init_storage() -> str | None:
         return None
 
 
-def put_object(path: str, data: bytes, content_type: str) -> dict:
-    key = init_storage()
+async def put_object(path: str, data: bytes, content_type: str) -> dict:
+    key = await init_storage()
     if not key:
         raise RuntimeError("Object storage is not configured.")
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
-        data=data, timeout=120,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.put(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key, "Content-Type": content_type},
+            content=data,
+        )
+        resp.raise_for_status()
+        return resp.json()
 
 
-def get_object(path: str) -> Tuple[bytes, str]:
-    key = init_storage()
+async def get_object(path: str) -> Tuple[bytes, str]:
+    key = await init_storage()
     if not key:
         raise RuntimeError("Object storage is not configured.")
-    resp = requests.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(
+            f"{STORAGE_URL}/objects/{path}",
+            headers={"X-Storage-Key": key},
+        )
+        resp.raise_for_status()
+        return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
 MIME_MAP = {
