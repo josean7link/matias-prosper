@@ -2,6 +2,8 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { useApp } from "@/contexts/AppContext";
 import { cn } from "@/lib/utils";
 import Logo from "@/components/Logo";
+import CommandPalette from "@/components/CommandPalette";
+import AlertsBell from "@/components/AlertsBell";
 import {
   ChartBar, Buildings, UserCheck, ShieldCheck, Coins, Stack, Wallet,
   ArrowsLeftRight, Equals, Plugs, Key, LightningSlash, Bell, FileText,
@@ -85,6 +87,23 @@ export default function AppShell({ children, surface = "backoffice" }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Command Palette trigger (visual only - shortcut handled globally) */}
+          <button
+            onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+            className="hidden md:flex items-center gap-2 h-9 px-3 rounded-full border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-xs text-[var(--fg-muted)] transition-colors"
+            data-testid="topbar-search"
+            aria-label="Open command palette"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <span>Search…</span>
+            <kbd className="font-mono text-[10px] px-1.5 py-0.5 rounded border border-[var(--border)]">⌘K</kbd>
+          </button>
+
+          {/* Alerts bell (backoffice internal only) */}
+          {surface === "backoffice" && user?.is_internal && <AlertsBell />}
+
           {/* Pending approvals pill */}
           {surface === "backoffice" && user?.is_internal && pendingApprovals > 0 && (
             <button onClick={() => navigate("/app/approvals")}
@@ -199,6 +218,9 @@ export default function AppShell({ children, surface = "backoffice" }) {
           </div>
         </main>
       </div>
+
+      {/* Global Command Palette */}
+      <CommandPalette />
     </div>
   );
 }

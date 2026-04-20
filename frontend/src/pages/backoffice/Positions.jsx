@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
 import { PageHeader, StatusBadge, CopyField, EmptyState } from "@/components/common";
+import ExportButton from "@/components/ExportButton";
 import { fmtMoney, fmtDate, fmtNum } from "@/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -16,7 +17,19 @@ export default function Positions() {
 
   return (
     <div data-testid="positions-page">
-      <PageHeader title="Positions Explorer" subtitle={`${items.length} active positions`} />
+      <PageHeader title="Positions Explorer" subtitle={`${items.length} active positions`}
+        actions={
+          <ExportButton filename={`positions_${new Date().toISOString().slice(0,10)}`}
+                        rows={items.map(p => ({
+                          position_id: p.position_id, org_id: p.org_id,
+                          user_ref: p.user_reference_id, product_id: p.product_id,
+                          principal: p.principal, accrued: p.accrued_interest,
+                          claimed: p.claimed_interest, stellar_address: p.stellar_address,
+                          start: p.start_date, maturity: p.maturity_date, status: p.status,
+                        }))}
+                        testId="positions-export" />
+        }
+      />
       <div className="mb-4">
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="w-[200px] bg-[var(--surface)] border-[var(--border)] rounded-md" data-testid="positions-filter-status">

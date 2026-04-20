@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api from "@/lib/api";
 import { PageHeader, StatusBadge, EnvPill, EmptyState } from "@/components/common";
 import FormDialog from "@/components/FormDialog";
+import ExportButton from "@/components/ExportButton";
 import { fmtMoney, fmtDate, fmtNum } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -38,10 +39,20 @@ export default function Clients() {
     <div data-testid="clients-page">
       <PageHeader title="Clients" subtitle={`${items.length} organizations`}
         actions={
-          <Button onClick={() => setCreateOpen(true)} data-testid="create-client-btn"
-                  className="rounded-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white gap-1.5">
-            <Plus size={14} weight="bold" /> New Client
-          </Button>
+          <div className="flex gap-2">
+            <ExportButton filename={`clients_${new Date().toISOString().slice(0,10)}`}
+                          rows={items.map(o => ({
+                            org_id: o.org_id, name: o.name, legal_name: o.legal_name,
+                            type: o.type, country: o.country, status: o.status,
+                            environment: o.environment, aum_usd: o.aum_usd,
+                            active_investors: o.active_investors, created_at: o.created_at,
+                          }))}
+                          testId="clients-export" />
+            <Button onClick={() => setCreateOpen(true)} data-testid="create-client-btn"
+                    className="rounded-full bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white gap-1.5">
+              <Plus size={14} weight="bold" /> New Client
+            </Button>
+          </div>
         }
       />
       <div className="flex gap-3 mb-4">
