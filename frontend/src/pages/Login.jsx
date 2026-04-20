@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { useApp } from "@/contexts/AppContext";
 import Logo from "@/components/Logo";
 import { ArrowRight, ArrowUpRight, Sun, Moon } from "@phosphor-icons/react";
@@ -31,6 +31,7 @@ export default function Login() {
         <Logo size={34} />
         <nav className="hidden md:flex items-center gap-8 text-sm text-[var(--fg-muted)]">
           <a href="https://www.prosper.foundation" target="_blank" rel="noreferrer" className="hover:text-[var(--fg)] transition-colors">Whitepaper</a>
+          <Link to="/developers" className="hover:text-[var(--fg)] transition-colors" data-testid="nav-developers">Developers</Link>
           <a href="https://www.prosper.foundation" target="_blank" rel="noreferrer" className="hover:text-[var(--fg)] transition-colors">Company</a>
           <a href="https://www.prosper.foundation" target="_blank" rel="noreferrer" className="hover:text-[var(--fg)] transition-colors">Community</a>
           <a href="https://www.prosper.foundation" target="_blank" rel="noreferrer" className="hover:text-[var(--fg)] transition-colors">The Protocol</a>

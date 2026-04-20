@@ -8,6 +8,7 @@ import AuthCallback from "@/components/AuthCallback";
 import AppShell from "@/components/layout/AppShell";
 
 import Login from "@/pages/Login";
+import DevPortal from "@/pages/DevPortal";
 
 // Backoffice
 import Dashboard from "@/pages/backoffice/Dashboard";
@@ -51,6 +52,7 @@ function InnerRouter() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/developers" element={<DevPortal />} />
 
       <Route path="/" element={<Navigate to="/app" replace />} />
 
