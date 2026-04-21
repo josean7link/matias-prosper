@@ -93,6 +93,41 @@ def test_upload_disallowed_zip():
     assert ".zip" in r.text.lower() or "not allowed" in r.text.lower()
 
 
+def test_magic_byte_pdf_spoofed():
+    """A plain text file renamed to .pdf must be rejected by the magic-byte check."""
+    files = {"file": ("spoof.pdf", io.BytesIO(b"this is definitely not a pdf"), "application/pdf")}
+    data = {"org_id": "org_e0d081eab53d", "doc_type": "other"}
+    r = requests.post(f"{BASE}/api/documents/upload", files=files, data=data, headers=HDR, timeout=20)
+    assert r.status_code == 400
+    assert "does not match" in r.text.lower()
+
+
+def test_magic_byte_png_spoofed():
+    files = {"file": ("spoof.png", io.BytesIO(b"GIF89a not actually a png"), "image/png")}
+    data = {"org_id": "org_e0d081eab53d", "doc_type": "other"}
+    r = requests.post(f"{BASE}/api/documents/upload", files=files, data=data, headers=HDR, timeout=20)
+    assert r.status_code == 400
+
+
+def test_magic_byte_csv_binary_rejected():
+    """Binary content renamed to .csv must fail the utf-8 heuristic."""
+    binary = b"\x00\x01\x02\x03\x04binary\x00garbage"
+    files = {"file": ("binary.csv", io.BytesIO(binary), "text/csv")}
+    data = {"org_id": "org_e0d081eab53d", "doc_type": "other"}
+    r = requests.post(f"{BASE}/api/documents/upload", files=files, data=data, headers=HDR, timeout=20)
+    assert r.status_code == 400
+
+
+def test_magic_byte_valid_csv_accepted():
+    csv_bytes = b"name,email\nAlice,alice@example.com\nBob,bob@example.com\n"
+    files = {"file": ("contacts.csv", io.BytesIO(csv_bytes), "text/csv")}
+    data = {"org_id": "org_e0d081eab53d", "doc_type": "other"}
+    r = requests.post(f"{BASE}/api/documents/upload", files=files, data=data, headers=HDR, timeout=30)
+    assert r.status_code == 200, r.text[:300]
+    # cleanup
+    requests.delete(f"{BASE}/api/documents/{r.json()['document_id']}", headers=HDR, timeout=15)
+
+
 def test_upload_png_works(org_id):
     files = {"file": ("logo.png", io.BytesIO(PNG_BYTES), "image/png")}
     data = {"org_id": org_id, "doc_type": "other"}

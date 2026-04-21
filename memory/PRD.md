@@ -35,6 +35,11 @@ Users with email `@prosper.foundation` are auto-flagged internal + super_admin.
 
 ## What's Implemented (updated 2026-04-21)
 
+### 2026-04-21 (later) — Hardening + Ops visibility
+- **Magic-byte sniffing on uploads:** `POST /api/documents/upload` now validates actual file signatures (PDF `%PDF-`, PNG header, JPEG, WebP `RIFF….WEBP`) and enforces a UTF-8-only heuristic for `.csv`. A file renamed from `.exe` → `.pdf` with junk content is rejected with `400 "File content does not match .pdf signature"`. Defends against the classic "upload an exe as a PDF" attack.
+- **Prosper upstream status in UI:** new `ProsperUpstreamCard` on the Backoffice → Integrations page. Calls `GET /api/admin/prosper-upstream` and renders a red / amber / green semaphore + the 4 key fields (enabled, reachable, authenticated, last check) + base URL + raw error message. Re-check button triggers a fresh probe (cache-bypassed). Non-internal users: card is hidden (403 tolerated silently).
+- Added tests `test_admin_upstream.py` (3) + magic-byte tests (4). Full suite now: **49/49 green**.
+
 ### 2026-04-21 — Maintainability + Storage Performance + Test Coverage
 - **Router modularisation:** split the 1500-line `/app/backend/routers.py` into a `/app/backend/routers/` package — one file per domain (auth, dashboard, organizations, onboarding, compliance, funds, positions, treasury, transactions, reconciliation, integrations, misc, end_customers, users, admin, approvals, mfa, documents, search). Shared helpers live in `_helpers.py`. `server.py` still imports `ALL_ROUTERS` exactly as before.
 - **Async object storage:** `storage.py` rewritten on top of `httpx.AsyncClient` so the FastAPI event loop is no longer blocked by 10 MB uploads. `put_object` / `get_object` / `init_storage` are now awaitables. Documents router updated to await.
@@ -99,10 +104,8 @@ Login · Developer Portal (`/developers`)
 - Public Dev Portal + Documents Panel UI validated by testing agent
 
 ## P1 — Next Action Items
-1. Connect real Prosper Stellar Protocol APIs — code path ready (`/app/backend/prosper_client.py` + `/api/admin/prosper-upstream` diagnostic), **blocked by network egress**: the pod cannot resolve `lb-backend-develop-1915190402.us-west-2.elb.amazonaws.com` (NXDOMAIN). Once the firewall/DNS is opened, set `PROSPER_API_ENABLED=true` in `backend/.env` and verify with `GET /api/admin/prosper-upstream`.
-2. Magic-byte sniffing on uploaded docs (in addition to extension check).
-3. Production email allowlist / organization onboarding flow.
-4. UI screens for the new `/api/admin/prosper-upstream` diagnostic (show status in the Integrations page).
+1. **Open network egress to the Prosper upstream** (infra-team task). The pod still returns NXDOMAIN for `lb-backend-develop-1915190402.us-west-2.elb.amazonaws.com`. Once DNS/egress is open, flip `PROSPER_API_ENABLED=true` in `backend/.env`; the Integrations page will immediately go green via `/api/admin/prosper-upstream`.
+2. Production email allowlist / organization onboarding flow.
 
 ## P2 — Enhancements
 - Sandbox with independent seed (fully separate from production seed)

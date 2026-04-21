@@ -46,6 +46,35 @@ docs_router = APIRouter(prefix="/documents", tags=["documents"])
 _ALLOWED_EXTS = {"pdf", "png", "jpg", "jpeg", "webp", "csv"}
 _MAX_BYTES = 10 * 1024 * 1024  # 10 MB
 
+# Magic bytes (file signatures) for each allowed format — verified against the first
+# bytes of the uploaded payload to defeat renamed/spoofed files.
+_MAGIC_BYTES = {
+    "pdf":  [b"%PDF-"],
+    "png":  [b"\x89PNG\r\n\x1a\n"],
+    "jpg":  [b"\xff\xd8\xff"],
+    "jpeg": [b"\xff\xd8\xff"],
+    "webp": [b"RIFF"],  # + "WEBP" at offset 8 (checked below)
+    # csv has no reliable signature; we validate with a utf-8 decode heuristic instead.
+}
+
+
+def _sniff_matches(ext: str, data: bytes) -> bool:
+    """Return True if the first bytes of `data` match the expected signature for `ext`."""
+    if ext == "csv":
+        # Accept only valid utf-8 (or ascii) text with no NUL bytes in the first 4 KB
+        sample = data[:4096]
+        if b"\x00" in sample:
+            return False
+        try:
+            sample.decode("utf-8")
+            return True
+        except UnicodeDecodeError:
+            return False
+    if ext == "webp":
+        return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    sigs = _MAGIC_BYTES.get(ext, [])
+    return any(data.startswith(sig) for sig in sigs)
+
 
 def _can_view_doc(user: User, doc: dict) -> bool:
     if user.is_internal or user.platform_role == "super_admin":
@@ -79,6 +108,10 @@ async def upload_document(
         raise HTTPException(413, "File exceeds 10MB limit")
     if len(data) == 0:
         raise HTTPException(400, "Empty file")
+
+    # Defense in depth: reject files whose magic bytes don't match the extension
+    if not _sniff_matches(ext, data):
+        raise HTTPException(400, f"File content does not match .{ext} signature")
 
     content_type = file.content_type or storage_mod.guess_mime(file.filename or "")
     doc_id = f"doc_{new_id()}"
