@@ -20,6 +20,13 @@ export default function Login() {
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
   };
 
+  const handleDemoEnter = (target = "/app", token = "test_session_prosper_super_admin") => {
+    // Skip OAuth using a seeded test token (auto-refreshed on every backend boot).
+    // Use a full navigation so AppContext re-fetches /auth/me cleanly.
+    localStorage.setItem("prosper_session_token", token);
+    window.location.assign(target);
+  };
+
   const urlParams = new URLSearchParams(location.search);
   const error = urlParams.get("error");
 
@@ -44,6 +51,12 @@ export default function Login() {
             aria-label="Toggle theme"
           >
             {theme === "dark" ? <Sun size={16} weight="bold" /> : <Moon size={16} weight="bold" />}
+          </button>
+          <button onClick={() => handleDemoEnter("/app")} data-testid="header-demo-enter"
+                  className="btn-pill btn-outline hidden sm:inline-flex"
+                  title="Enter the platform with the seeded super_admin demo account (no Google OAuth)">
+            Enter demo
+            <ArrowRight size={12} weight="bold" />
           </button>
           <button onClick={handleLogin} data-testid="header-launch-button"
                   className="btn-pill btn-primary">
@@ -94,6 +107,29 @@ export default function Login() {
               Contact us
               <ArrowUpRight size={14} weight="bold" />
             </a>
+          </div>
+
+          {/* Demo direct-access (skip Google OAuth) */}
+          <div className="mt-6 inline-flex flex-wrap items-center justify-center gap-2 text-xs text-[var(--fg-muted)] font-mono"
+               data-testid="demo-shortcuts">
+            <span className="uppercase tracking-[0.2em]">Quick demo:</span>
+            <button onClick={() => handleDemoEnter("/app")} data-testid="demo-enter-backoffice"
+                    className="underline underline-offset-4 decoration-[var(--primary)]/40 hover:decoration-[var(--primary)] hover:text-[var(--primary)] transition-colors">
+              Backoffice (super_admin)
+            </button>
+            <span aria-hidden>·</span>
+            <button onClick={() => {
+                      handleDemoEnter("/portal", "test_session_prosper_client_admin");
+                    }}
+                    data-testid="demo-enter-portal"
+                    className="underline underline-offset-4 decoration-[var(--primary)]/40 hover:decoration-[var(--primary)] hover:text-[var(--primary)] transition-colors">
+              Client Portal (Alemany Capital)
+            </button>
+            <span aria-hidden>·</span>
+            <Link to="/developers" data-testid="demo-enter-developers"
+                  className="underline underline-offset-4 decoration-[var(--primary)]/40 hover:decoration-[var(--primary)] hover:text-[var(--primary)] transition-colors">
+              Developer Portal
+            </Link>
           </div>
 
           <div className="mt-8 text-xs font-mono uppercase tracking-[0.2em] text-[var(--fg-subtle)]">
