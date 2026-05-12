@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode — Prosper light surfaces */
+    --bg:             255 255 255;  /* #FFFFFF */
+    --surface:        235 241 251;  /* #EBF1FB  light */
+    --surface-hover:  223 232 248;
+    --border:         215 224 240;
+    --fg:             10 31 68;     /* #0A1F44  dark navy */
+    --fg-muted:       91 100 120;   /* #5B6478  grey */
+    --fg-subtle:      141 152 175;
+  }
+
+  .dark {
+    /* Dark mode — Morpho-style deep navy backgrounds */
+    --bg:             10 17 32;     /* near black-navy */
+    --surface:        18 28 48;
+    --surface-hover:  26 38 60;
+    --border:         32 46 72;
+    --fg:             235 241 251;  /* #EBF1FB Prosper light */
+    --fg-muted:       150 165 195;
+    --fg-subtle:      110 125 155;
+  }
+
+  html, body { background: rgb(var(--bg)); color: rgb(var(--fg)); }
+  body {
+    font-family: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Number-style typography */
+  .tabular { font-variant-numeric: tabular-nums; }
+  /* Selection */
+  ::selection { background: #2B6BFF40; color: rgb(var(--fg)); }
+}
+
+@layer components {
+  .prosper-card {
+    @apply bg-surface rounded-lg border border-border shadow-card;
+  }
+  .prosper-input {
+    @apply w-full bg-surface border border-border rounded px-4 py-3 text-fg
+           placeholder:text-fg-subtle outline-none focus:border-primary
+           focus:ring-2 focus:ring-primary/20 transition-colors;
+    font-family: var(--font-plex-sans);
+  }
+  .prosper-btn-primary {
+    @apply inline-flex items-center justify-center gap-2 bg-primary text-white
+           font-medium rounded px-5 py-3 hover:bg-primary-600 transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .prosper-btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 text-fg-muted
+           hover:text-fg hover:bg-surface-hover rounded px-3 py-2 transition-colors;
+  }
+  .sidebar-link {
+    @apply flex items-center gap-3 px-3 py-2 rounded text-sm text-fg-muted
+           hover:bg-surface-hover hover:text-fg transition-colors;
+  }
+  .sidebar-link[data-active="true"] {
+    @apply bg-primary/10 text-primary font-medium;
+  }
+}

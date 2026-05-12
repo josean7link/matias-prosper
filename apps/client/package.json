@@ -1,0 +1,9 @@
+{
+  "name": "@prosper/client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone client portal entrypoint. In Phase 0 the routes live inside /frontend (route group '(client)') and run on the single Next.js dev server. This package exists so the monorepo structure matches the PRD; promote to a fully separate Next.js app in a later phase when productive deploy requires its own domain.",
+  "scripts": {
+    "dev": "echo \"[client] Phase 0: routes served by /frontend Next.js on port 3000 → http://localhost:3000/client\""
+  }
+}

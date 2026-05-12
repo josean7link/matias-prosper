@@ -1,0 +1,51 @@
+version: "3.9"
+
+# Phase 0 — local dev stack. Run with: docker compose up -d
+# Then the API can talk to: mongo:27017, redis:6379, mailhog:1025.
+# In Kubernetes (preview / production) MongoDB is bundled separately.
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: prosper-api
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=prosper_phase0
+      - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=*
+      - JWT_SECRET=phase0-dev-secret-change-me
+      - RESEND_API_KEY=
+      - RESEND_FROM=onboarding@resend.dev
+      - COOKIE_SECURE=false
+    ports: ["8001:8001"]
+    depends_on: [mongo, redis, mailhog]
+
+  mongo:
+    image: mongo:7
+    container_name: prosper-mongo
+    volumes: ["./.data/mongo:/data/db"]
+    ports: ["27017:27017"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: prosper-redis
+    ports: ["6379:6379"]
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: prosper-mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+
+  admin:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: prosper-admin
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://api:8001
+    ports: ["3000:3000"]
+    depends_on: [api]

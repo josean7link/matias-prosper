@@ -1,0 +1,5 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+  - "backend"     # apps/api symlink
+  - "frontend"    # apps/admin symlink
