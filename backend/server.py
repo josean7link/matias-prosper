@@ -1,56 +1,46 @@
-"""Prosper Phase 0 — FastAPI passwordless-OTP auth.
-
-Endpoints (per fase_00_bootstrap.md):
-  POST /api/v1/auth/passwordless-login   { email } -> { code }
-  POST /api/v1/auth/passwordless-token   { code, token } -> { accessToken }
-  GET  /api/v1/auth/me                                  -> { email }
-  POST /api/v1/auth/logout                              -> { ok: true }
-  GET  /api/health                                      -> { ok: true }
-
-Storage: MongoDB Motor (sessions) + Redis (OTP codes, 10-min TTL).
-Email: Resend (RESEND_API_KEY); falls back to logging the OTP if not configured.
-"""
+"""Prosper Phase 1 API — passwordless OTP auth + multi-tenant model + audit log."""
 from __future__ import annotations
-import os
-import secrets
-import logging
+import os, secrets, logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-
-from fastapi import FastAPI, APIRouter, HTTPException, Response, Request, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
-from motor.motor_asyncio import AsyncIOMotorClient
-import redis.asyncio as aioredis
-import httpx
-import jwt
-from dotenv import load_dotenv
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
+from fastapi import FastAPI, APIRouter, HTTPException, Response, Request, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
+import httpx
+from dotenv import load_dotenv
+import redis.asyncio as aioredis
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-MONGO_URL = os.environ["MONGO_URL"]
-DB_NAME = os.environ["DB_NAME"]
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-JWT_SECRET = os.environ.get("JWT_SECRET", "phase0-dev-secret-change-me")
-JWT_ALGORITHM = "HS256"
-JWT_TTL_SECONDS = 7 * 24 * 3600
-OTP_TTL_SECONDS = 600  # 10 minutes
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
-RESEND_FROM = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
-COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
+load_dotenv(Path(__file__).parent / ".env")
+
+from db import (
+    db, col, ensure_indexes,
+    ORGANIZATIONS, USERS, OTP_CODES, AUDIT_LOGS,
+)
+from models import utc_now, Organization
+from roles import Role, is_internal
+from auth import (
+    CurrentUser, get_current_user, make_jwt, requires_role, org_scoped, assert_can_read,
+)
+from audit import log_action, audited
+from seed import seed_phase1
+from seed_demo import seed_demo_transactions
+from routes_dashboard import router as dashboard_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("prosper")
 
 # ---------------------------------------------------------------------------
-# App
+# App config
 # ---------------------------------------------------------------------------
-app = FastAPI(title="Prosper Platform API", version="0.1.0")
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+OTP_TTL = 600
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+RESEND_FROM = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
+
+app = FastAPI(title="Prosper Platform API", version="0.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
@@ -58,54 +48,50 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-mongo: AsyncIOMotorClient | None = None
 redis_client: aioredis.Redis | None = None
 
 
 @app.on_event("startup")
 async def startup():
-    global mongo, redis_client
-    mongo = AsyncIOMotorClient(MONGO_URL)
+    global redis_client
     try:
         redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
         await redis_client.ping()
         logger.info("Redis connected.")
     except Exception as e:
-        logger.warning(f"Redis unavailable ({e}); falling back to Mongo for OTP storage.")
+        logger.warning(f"Redis unavailable ({e}); using Mongo for OTP storage.")
         redis_client = None
+    await ensure_indexes()
+    seeded = await seed_phase1()
+    logger.info(f"Seed: orgs={seeded['orgs']} users={seeded['users']}")
+    demo = await seed_demo_transactions(days=180)
+    logger.info(f"Demo tx seed: {demo}")
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    if mongo:
-        mongo.close()
     if redis_client:
         await redis_client.close()
 
 
-def db():
-    return mongo[DB_NAME]
-
-
 # ---------------------------------------------------------------------------
-# OTP storage (Redis-first, Mongo fallback for hot-reload dev without redis)
+# OTP storage (Redis-first, Mongo fallback)
 # ---------------------------------------------------------------------------
-async def otp_put(token: str, code: str, email: str):
+async def _otp_put(token: str, code: str, email: str):
     payload = f"{code}|{email}"
     if redis_client:
-        await redis_client.setex(f"otp:{token}", OTP_TTL_SECONDS, payload)
+        await redis_client.setex(f"otp:{token}", OTP_TTL, payload)
     else:
-        await db()["otp_codes"].update_one(
+        await col(OTP_CODES).update_one(
             {"token": token},
             {"$set": {"token": token, "code": code, "email": email,
                       "expires_at": (datetime.now(timezone.utc) +
-                                     timedelta(seconds=OTP_TTL_SECONDS)).isoformat()}},
+                                     timedelta(seconds=OTP_TTL)).isoformat()}},
             upsert=True,
         )
 
 
-async def otp_pop(token: str) -> Optional[tuple[str, str]]:
+async def _otp_pop(token: str):
     if redis_client:
         raw = await redis_client.get(f"otp:{token}")
         if raw:
@@ -113,7 +99,7 @@ async def otp_pop(token: str) -> Optional[tuple[str, str]]:
             code, email = raw.split("|", 1)
             return code, email
         return None
-    doc = await db()["otp_codes"].find_one_and_delete({"token": token})
+    doc = await col(OTP_CODES).find_one_and_delete({"token": token})
     if not doc:
         return None
     if doc["expires_at"] < datetime.now(timezone.utc).isoformat():
@@ -121,131 +107,96 @@ async def otp_pop(token: str) -> Optional[tuple[str, str]]:
     return doc["code"], doc["email"]
 
 
-# ---------------------------------------------------------------------------
-# Mail (Resend) — falls back to log line when API key missing
-# ---------------------------------------------------------------------------
-async def send_otp_email(email: str, code: str):
-    subject = "Your Prosper sign-in code"
-    body = (
-        f"<p>Hi,</p>"
-        f"<p>Your Prosper verification code is:</p>"
-        f"<p style='font-family:monospace;font-size:28px;letter-spacing:4px'>"
-        f"<b>{code}</b></p>"
-        f"<p>This code expires in 10 minutes.</p>"
-        f"<p>— Prosper</p>"
-    )
+async def _send_otp(email: str, code: str):
     if not RESEND_API_KEY:
-        logger.warning(f"[DEV OTP] {email} -> {code}  (set RESEND_API_KEY to send real emails)")
+        logger.warning(f"[DEV OTP] {email} -> {code}  (set RESEND_API_KEY to email it)")
         return
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                "https://api.resend.com/emails",
-                headers={"Authorization": f"Bearer {RESEND_API_KEY}",
-                         "Content-Type": "application/json"},
-                json={"from": RESEND_FROM, "to": [email],
-                      "subject": subject, "html": body},
-            )
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post("https://api.resend.com/emails",
+                             headers={"Authorization": f"Bearer {RESEND_API_KEY}",
+                                      "Content-Type": "application/json"},
+                             json={"from": RESEND_FROM, "to": [email],
+                                   "subject": "Your Prosper sign-in code",
+                                   "html": f"<p>Your code: <b style='font-size:24px;font-family:monospace'>{code}</b></p>"})
             r.raise_for_status()
-            logger.info(f"OTP email sent to {email}")
     except Exception as e:
-        logger.error(f"Resend send failed: {e}; OTP for {email} was {code}")
+        logger.error(f"Resend failed: {e}; code for {email} was {code}")
 
 
 # ---------------------------------------------------------------------------
-# Auth helpers
-# ---------------------------------------------------------------------------
-def make_jwt(email: str) -> str:
-    now = datetime.now(timezone.utc)
-    return jwt.encode(
-        {"sub": email, "iat": int(now.timestamp()),
-         "exp": int((now + timedelta(seconds=JWT_TTL_SECONDS)).timestamp())},
-        JWT_SECRET, algorithm=JWT_ALGORITHM,
-    )
-
-
-def parse_jwt(token: str) -> dict:
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-    except jwt.PyJWTError:
-        raise HTTPException(401, "Invalid or expired token")
-
-
-async def get_current_user(request: Request) -> str:
-    token = request.cookies.get("prosper_session")
-    if not token:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            token = auth[7:]
-    if not token:
-        raise HTTPException(401, "Not authenticated")
-    payload = parse_jwt(token)
-    return payload["sub"]
-
-
-# ---------------------------------------------------------------------------
-# Routes
+# Routers
 # ---------------------------------------------------------------------------
 api = APIRouter(prefix="/api")
-v1 = APIRouter(prefix="/v1")
+v1  = APIRouter(prefix="/v1")
 
 
-class LoginRequest(BaseModel):
+class LoginIn(BaseModel):
     email: EmailStr
 
 
-class LoginResponse(BaseModel):
-    code: str  # opaque continuation token (NOT the OTP itself)
+class TokenIn(BaseModel):
+    code: str       # continuation
+    token: str      # the OTP user typed
 
 
-class TokenRequest(BaseModel):
-    code: str       # the continuation token
-    token: str      # the 4-digit OTP the user typed
-
-
-class TokenResponse(BaseModel):
-    accessToken: str
-
-
-@v1.post("/auth/passwordless-login", response_model=LoginResponse)
-async def passwordless_login(body: LoginRequest):
+@v1.post("/auth/passwordless-login")
+async def passwordless_login(body: LoginIn):
     otp = f"{secrets.randbelow(10000):04d}"
-    continuation = secrets.token_urlsafe(24)
-    await otp_put(continuation, otp, body.email.lower())
-    await send_otp_email(body.email, otp)
-    return {"code": continuation}
+    cont = secrets.token_urlsafe(24)
+    await _otp_put(cont, otp, body.email.lower())
+    await _send_otp(body.email, otp)
+    return {"code": cont}
 
 
-@v1.post("/auth/passwordless-token", response_model=TokenResponse)
-async def passwordless_token(body: TokenRequest, response: Response):
-    stored = await otp_pop(body.code)
+def _domain_allowed(email: str, allowlist: list[str]) -> bool:
+    """Phase 1 — internal emails (@prosper.foundation) always allowed."""
+    domain = email.lower().rsplit("@", 1)[-1]
+    if domain == "prosper.foundation":
+        return True
+    return domain in (allowlist or [])
+
+
+@v1.post("/auth/passwordless-token")
+async def passwordless_token(body: TokenIn, response: Response, request: Request):
+    stored = await _otp_pop(body.code)
     if not stored:
         raise HTTPException(401, "Code expired or already used")
     expected, email = stored
     if body.token.strip() != expected:
-        # Re-insert so the user can retry (with a short grace period)
-        await otp_put(body.code, expected, email)
+        await _otp_put(body.code, expected, email)
         raise HTTPException(401, "Invalid OTP")
-    access = make_jwt(email)
-    response.set_cookie(
-        "prosper_session", access,
-        httponly=True, secure=COOKIE_SECURE, samesite="lax",
-        path="/", max_age=JWT_TTL_SECONDS,
-    )
-    # Upsert user record
-    await db()["users"].update_one(
-        {"email": email},
-        {"$set": {"email": email, "last_login": datetime.now(timezone.utc).isoformat()},
-         "$setOnInsert": {"created_at": datetime.now(timezone.utc).isoformat()}},
-        upsert=True,
-    )
+
+    # Resolve user (or auto-create against allowlist)
+    user_doc = await col(USERS).find_one({"email": email}, {"_id": 0})
+    if not user_doc:
+        # Auto-attach to the first org whose allowlist matches the email's domain
+        domain = email.rsplit("@", 1)[-1]
+        org_doc = await col(ORGANIZATIONS).find_one({"allowlist_domains": domain}, {"_id": 0})
+        if not org_doc and domain != "prosper.foundation":
+            raise HTTPException(403, "Email domain not on any organization allowlist")
+        role = Role.super_admin if domain == "prosper.foundation" else Role.client_user
+        user_doc = {
+            "user_id": f"usr_{secrets.token_hex(6)}",
+            "email": email,
+            "role": role.value,
+            "org_id": org_doc["org_id"] if org_doc else None,
+            "status": "active",
+            "kyc_status": "pending", "mfa_enabled": False,
+            "is_deleted": False,
+            "created_at": utc_now(), "updated_at": utc_now(),
+        }
+        await col(USERS).insert_one(dict(user_doc))
+
+    await col(USERS).update_one({"email": email},
+                                {"$set": {"last_login_at": utc_now(), "updated_at": utc_now()}})
+
+    role = Role(user_doc["role"])
+    access = make_jwt(user_id=user_doc["user_id"], email=email, role=role,
+                      org_id=user_doc.get("org_id"))
+    response.set_cookie("prosper_session", access, httponly=True, secure=COOKIE_SECURE,
+                        samesite="lax", path="/", max_age=7*24*3600)
     return {"accessToken": access}
-
-
-@v1.get("/auth/me")
-async def me(email: str = Depends(get_current_user)):
-    user = await db()["users"].find_one({"email": email}, {"_id": 0})
-    return {"email": email, "user": user}
 
 
 @v1.post("/auth/logout")
@@ -254,10 +205,151 @@ async def logout(response: Response):
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# /api/v1/me — user + org + role + perms + feature flags
+# ---------------------------------------------------------------------------
+def _calc_permissions(role: Role) -> list[str]:
+    perms = {
+        Role.super_admin:        ["*"],
+        Role.admin:              ["org:read", "org:write", "user:read", "user:write",
+                                  "compliance:read", "transactions:read", "approvals:approve"],
+        Role.compliance_officer: ["org:read", "user:read", "kyc:read", "kyc:decide",
+                                  "kyb:read", "kyb:decide", "audit:read"],
+        Role.finance:            ["transactions:read", "treasury:read", "approvals:approve"],
+        Role.client_admin:       ["org:read:self", "user:read:self", "user:write:self",
+                                  "api_keys:manage", "webhooks:manage"],
+        Role.client_user:        ["org:read:self", "user:read:self"],
+    }
+    return perms.get(role, [])
+
+
+def _feature_flags(user_doc: dict, org_doc: Optional[dict]) -> dict:
+    return {
+        "mfa_required":  False if user_doc.get("role") == Role.super_admin.value else True,
+        "mfa_enabled":   bool(user_doc.get("mfa_enabled")),
+        "kyb_locked":    bool(org_doc and org_doc.get("kyb_status") not in ("approved",)),
+        "kyc_pending":   user_doc.get("kyc_status") != "approved",
+        "is_internal":   is_internal(Role(user_doc["role"])),
+    }
+
+
+@v1.get("/me")
+async def me(user: CurrentUser = Depends(get_current_user)):
+    user_doc = await col(USERS).find_one({"user_id": user.user_id}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(404, "User not found")
+    org_doc = None
+    if user.scope_org_id or user_doc.get("org_id"):
+        org_doc = await col(ORGANIZATIONS).find_one(
+            {"org_id": user.scope_org_id or user_doc["org_id"]}, {"_id": 0})
+    return {
+        "user": user_doc,
+        "org":  org_doc,
+        "role": user.role.value,
+        "is_internal": user.is_internal,
+        "acting_as_org": user.acting_as_org,
+        "permissions": _calc_permissions(user.role),
+        "features":    _feature_flags(user_doc, org_doc),
+    }
+
+
+# Alias kept for Phase 0 callers (frontend, integration tests) — same payload.
+@v1.get("/auth/me")
+async def auth_me(user: CurrentUser = Depends(get_current_user)):
+    return await me(user)
+
+
+# ---------------------------------------------------------------------------
+# Organizations endpoints (Phase 1 — list + get, with scope + cross-org guard)
+# ---------------------------------------------------------------------------
+@v1.get("/organizations")
+async def list_orgs(scope = Depends(org_scoped())):
+    user, scope_filter = scope
+    q = {**scope_filter, "is_deleted": False}
+    items = await col(ORGANIZATIONS).find(q, {"_id": 0}).to_list(500)
+    return {"items": items, "total": len(items)}
+
+
+@v1.get("/organizations/{org_id}")
+async def get_org(org_id: str, user: CurrentUser = Depends(get_current_user)):
+    org = await col(ORGANIZATIONS).find_one({"org_id": org_id, "is_deleted": False}, {"_id": 0})
+    if not org:
+        raise HTTPException(404, "Not found")
+    await assert_can_read(user, org["org_id"])
+    return org
+
+
+class OrgCreate(BaseModel):
+    legal_name: str
+    commercial_name: str
+    country: str
+    type: str = "fintech"
+    allowlist_domains: list[str] = []
+
+
+@v1.post("/organizations")
+async def create_org(
+    body: OrgCreate,
+    user: CurrentUser = Depends(requires_role(Role.super_admin, Role.admin)),
+):
+    org = Organization(legal_name=body.legal_name, commercial_name=body.commercial_name,
+                       country=body.country, type=body.type,
+                       allowlist_domains=body.allowlist_domains)
+    doc = org.model_dump()
+    await col(ORGANIZATIONS).insert_one(dict(doc))
+    doc.pop("_id", None)
+    await log_action(actor=user, action="organization.created",
+                     resource_type="organization", resource_id=doc["org_id"],
+                     metadata={"legal_name": body.legal_name},
+                     org_id_override=doc["org_id"])
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Admin-only sample endpoint (used by tests to validate role guard)
+# ---------------------------------------------------------------------------
+@v1.get("/admin/dashboard")
+async def admin_dashboard(user: CurrentUser = Depends(
+    requires_role(Role.super_admin, Role.admin, Role.compliance_officer, Role.finance)
+)):
+    return {"ok": True, "for": user.email, "role": user.role.value}
+
+
+# ---------------------------------------------------------------------------
+# Audit log — read-only endpoint + explicit "block mutation" routes used by tests
+# ---------------------------------------------------------------------------
+@v1.get("/audit-logs")
+async def list_audit(scope = Depends(org_scoped()),
+                     limit: int = 50):
+    user, scope_filter = scope
+    if not user.is_internal:
+        # Clients only see their own org's audit trail
+        scope_filter = {"org_id": user.org_id}
+    items = await col(AUDIT_LOGS).find(scope_filter, {"_id": 0})\
+              .sort("timestamp", -1).to_list(min(limit, 200))
+    return {"items": items, "total": len(items)}
+
+
+@v1.patch("/audit-logs/{audit_id}")
+async def audit_patch_blocked(audit_id: str,
+                              user: CurrentUser = Depends(requires_role(Role.super_admin))):
+    raise HTTPException(405, "audit_logs is immutable")
+
+
+@v1.delete("/audit-logs/{audit_id}")
+async def audit_delete_blocked(audit_id: str,
+                               user: CurrentUser = Depends(requires_role(Role.super_admin))):
+    raise HTTPException(405, "audit_logs is immutable")
+
+
+# ---------------------------------------------------------------------------
+# Health
+# ---------------------------------------------------------------------------
 @api.get("/health")
 async def health():
     return {"ok": True, "service": "prosper-api", "version": app.version}
 
 
 api.include_router(v1)
+api.include_router(dashboard_router, prefix="/v1")
 app.include_router(api)
