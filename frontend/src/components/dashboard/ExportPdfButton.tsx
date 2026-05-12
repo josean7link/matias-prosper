@@ -2,8 +2,9 @@
 import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { Download } from "lucide-react";
+import { toast } from "sonner";
 import {
-  Document, Page, Text, View, StyleSheet, Font,
+  Document, Page, Text, View, StyleSheet,
 } from "@react-pdf/renderer";
 import type {
   DashboardKpis, NavPoint, RevenuePoint, TopClient,
@@ -11,45 +12,43 @@ import type {
 
 // `pdf` from @react-pdf/renderer is the imperative API. We lazy-load it on
 // click so the heavy bundle isn't shipped on the initial /admin payload.
-
-Font.register({
-  family: "IBM Plex Mono",
-  src: "https://fonts.gstatic.com/s/ibmplexmono/v19/-F63fjptAgt5VM-kVkqdyU8n5igg1l9kn-s.ttf",
-});
+// We deliberately use built-in Helvetica (no Font.register) — custom CDN fonts
+// regularly fail with 'Offset is outside the bounds of the DataView' in
+// browser environments.
 
 const styles = StyleSheet.create({
   page: { padding: 28, fontSize: 9, fontFamily: "Helvetica", color: "#0A1F44" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
             borderBottomWidth: 1, borderBottomColor: "#0A1F44", paddingBottom: 10, marginBottom: 16 },
   brandWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
-  logoBox: { width: 22, height: 22, backgroundColor: "#2B6BFF", color: "#FFFFFF",
+  logoBox: { width: 22, height: 22, backgroundColor: "#2B6BFF",
              alignItems: "center", justifyContent: "center", borderRadius: 4 },
-  logoText: { color: "#FFFFFF", fontSize: 12, fontWeight: 700 },
-  brand: { fontSize: 16, fontWeight: 700, marginLeft: 8, color: "#0A1F44" },
-  kicker: { fontSize: 7, color: "#5B6478", letterSpacing: 1.2, textTransform: "uppercase" },
-  title: { fontSize: 18, fontWeight: 700, marginTop: 2 },
+  logoText: { color: "#FFFFFF", fontSize: 12, fontFamily: "Helvetica-Bold" },
+  brand: { fontSize: 16, fontFamily: "Helvetica-Bold", marginLeft: 8, color: "#0A1F44" },
+  kicker: { fontSize: 7, color: "#5B6478", letterSpacing: 1.2 },
+  title: { fontSize: 18, fontFamily: "Helvetica-Bold", marginTop: 2 },
   metaCol: { textAlign: "right" },
-  metaLine: { fontSize: 8, color: "#5B6478", fontFamily: "IBM Plex Mono" },
+  metaLine: { fontSize: 8, color: "#5B6478", fontFamily: "Courier" },
 
   kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 16 },
   kpiCard: { width: "32%", padding: 8, backgroundColor: "#F5F8FC",
              borderRadius: 4, borderWidth: 1, borderColor: "#E2E8F0" },
-  kpiLabel: { fontSize: 7, color: "#5B6478", letterSpacing: 1, textTransform: "uppercase" },
-  kpiValue: { fontSize: 13, fontWeight: 700, marginTop: 3, fontFamily: "IBM Plex Mono" },
-  kpiHint: { fontSize: 7, color: "#5B6478", marginTop: 2, fontFamily: "IBM Plex Mono" },
+  kpiLabel: { fontSize: 7, color: "#5B6478", letterSpacing: 1 },
+  kpiValue: { fontSize: 13, fontFamily: "Helvetica-Bold", marginTop: 3 },
+  kpiHint: { fontSize: 7, color: "#5B6478", marginTop: 2, fontFamily: "Courier" },
 
   section: { marginTop: 6, marginBottom: 14 },
-  sectionTitle: { fontSize: 10, fontWeight: 700, marginBottom: 6, color: "#0A1F44" },
+  sectionTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 6, color: "#0A1F44" },
 
   tableRow: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#E2E8F0", paddingVertical: 5 },
   tableHead: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#0A1F44", paddingVertical: 4 },
   tCell: { fontSize: 9 },
-  tCellMono: { fontSize: 9, fontFamily: "IBM Plex Mono" },
-  tCellHead: { fontSize: 7, color: "#5B6478", textTransform: "uppercase", letterSpacing: 1 },
+  tCellMono: { fontSize: 9, fontFamily: "Courier" },
+  tCellHead: { fontSize: 7, color: "#5B6478", letterSpacing: 1 },
 
   footer: { position: "absolute", bottom: 18, left: 28, right: 28, flexDirection: "row",
             justifyContent: "space-between", fontSize: 7, color: "#5B6478",
-            borderTopWidth: 0.5, borderTopColor: "#E2E8F0", paddingTop: 6, fontFamily: "IBM Plex Mono" },
+            borderTopWidth: 0.5, borderTopColor: "#E2E8F0", paddingTop: 6, fontFamily: "Courier" },
 });
 
 const fmt = (n: number | null | undefined, currency = true) => {
@@ -170,6 +169,11 @@ export function ExportPdfButton(props: BtnProps) {
       a.download = `prosper-admin-${new Date().toISOString().slice(0, 10)}.pdf`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success("Dashboard PDF downloaded");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("PDF export failed", err);
+      toast.error("PDF export failed — check console for details");
     } finally {
       setBusy(false);
     }

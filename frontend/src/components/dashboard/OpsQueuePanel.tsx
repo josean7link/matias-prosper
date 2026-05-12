@@ -94,7 +94,14 @@ export function OpsQueuePanel({ data, loading, wsStatus }: { data: OpsQueue | un
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface">
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle">Live · 30s</div>
+          <div
+            data-testid="ops-queue-status"
+            className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle"
+          >
+            {wsStatus === "live" ? "Live · ws"
+              : wsStatus === "connecting" ? "Connecting…"
+              : "Live · 30s"}
+          </div>
           <h3 className="font-display font-bold text-sm text-fg mt-0.5">Operations Queue</h3>
         </div>
         <StatusDot color={total > 0 ? "yellow" : "green"} pulse={total > 0} />
