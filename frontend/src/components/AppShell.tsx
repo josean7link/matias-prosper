@@ -8,9 +8,11 @@ import {
   ChevronLeft, ChevronRight, Bell, LogOut, Moon, Sun,
 } from "lucide-react";
 import { ProsperLogo } from "./ProsperLogo";
+import { SandboxBanner } from "./SandboxBanner";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useEnvOptional, type Env } from "@/contexts/EnvContext";
 
 type NavItem = { href: string; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement> & { size?: number | string }>; soon?: boolean };
 
@@ -41,7 +43,9 @@ export function AppShell({
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [env, setEnv] = useState<"sandbox" | "production">("production");
+  const envCtx = useEnvOptional();
+  const env: Env = envCtx?.env ?? "production";
+  const setEnv = envCtx?.setEnv;
   const [email, setEmail] = useState<string>("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
@@ -85,6 +89,11 @@ export function AppShell({
           )}
         </div>
 
+        {/* Env indicator (admin only, where env switching is exposed) */}
+        {surface === "admin" && (
+          <SidebarEnvIndicator env={env} collapsed={collapsed} />
+        )}
+
         <nav className="flex-1 px-2 py-4 space-y-0.5">
           {nav.map(({ href, label, icon: Icon, soon }) => {
             const active = pathname === href || (href !== `/${surface}` && pathname.startsWith(href + "/"));
@@ -127,21 +136,26 @@ export function AppShell({
         {/* Topbar */}
         <header className="h-16 border-b border-border bg-bg flex items-center justify-between px-6">
           <div className="flex items-center gap-4">
-            {surface === "admin" && (
+            {surface === "admin" && setEnv && (
               <div className="flex items-center bg-surface border border-border rounded p-0.5" data-testid="env-switcher">
-                {(["sandbox", "production"] as const).map((e) => (
-                  <button
-                    key={e}
-                    onClick={() => setEnv(e)}
-                    className={cn(
-                      "px-3 py-1 text-[11px] font-mono uppercase tracking-wider rounded transition-colors",
-                      env === e ? "bg-primary text-white" : "text-fg-muted hover:text-fg",
-                    )}
-                    data-testid={`env-${e}`}
-                  >
-                    {e}
-                  </button>
-                ))}
+                {(["sandbox", "production"] as const).map((e) => {
+                  const active = env === e;
+                  const tone = e === "sandbox" ? "bg-warning" : "bg-success";
+                  return (
+                    <button
+                      key={e}
+                      onClick={() => setEnv(e)}
+                      className={cn(
+                        "px-3 py-1 text-[11px] font-mono uppercase tracking-wider rounded transition-colors inline-flex items-center gap-1.5",
+                        active ? "bg-primary text-white" : "text-fg-muted hover:text-fg",
+                      )}
+                      data-testid={`env-${e}`}
+                    >
+                      <span className={cn("w-1.5 h-1.5 rounded-full", tone, active && "ring-2 ring-white/40")} />
+                      {e}
+                    </button>
+                  );
+                })}
               </div>
             )}
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle hidden sm:inline">
@@ -184,10 +198,65 @@ export function AppShell({
           </div>
         </header>
 
+        {/* Sandbox banner — only renders when env === "sandbox". Stays right
+            between the topbar and the page content, full width of the main
+            column, persistent across navigation. */}
+        <SandboxBanner />
+
         {/* Main */}
         <main className="flex-1 overflow-auto">
           <div className="mx-auto max-w-[1440px] px-6 py-8">{children}</div>
         </main>
+      </div>
+    </div>
+  );
+}
+
+
+function SidebarEnvIndicator({
+  env,
+  collapsed,
+}: {
+  env: Env;
+  collapsed: boolean;
+}) {
+  const sandbox = env === "sandbox";
+  const tone = sandbox
+    ? { dot: "#E07B00", bg: "color-mix(in srgb, #E07B00 14%, transparent)", text: "#E07B00", label: "Sandbox" }
+    : { dot: "#0FA958", bg: "color-mix(in srgb, #0FA958 14%, transparent)", text: "#0FA958", label: "Production" };
+
+  if (collapsed) {
+    return (
+      <div className="px-3 pt-3 flex justify-center" data-testid={`sidebar-env-${env}`}>
+        <span
+          title={`Environment: ${tone.label}`}
+          className="w-2.5 h-2.5 rounded-full"
+          style={{ background: tone.dot, boxShadow: `0 0 0 3px ${tone.bg}` }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mx-3 mt-3 rounded border flex items-center gap-2 px-3 py-2"
+      style={{ background: tone.bg, borderColor: `${tone.dot}40` }}
+      data-testid={`sidebar-env-${env}`}
+    >
+      <span
+        className={sandbox ? "w-2 h-2 rounded-full animate-pulse" : "w-2 h-2 rounded-full"}
+        style={{ background: tone.dot }}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="text-[9px] font-mono uppercase tracking-[0.15em] text-fg-subtle leading-none">
+          Environment
+        </div>
+        <div
+          className="text-xs font-mono uppercase tracking-wider font-semibold mt-0.5 leading-none"
+          style={{ color: tone.text }}
+        >
+          {tone.label}
+        </div>
       </div>
     </div>
   );
