@@ -202,6 +202,7 @@ async def get_volume(days: int = Query(30, ge=1, le=365),
         k = day.strftime("%Y-%m-%d")
         out.append(by_day.get(k, {"date": k, "subscribe": 0, "redeem": 0}))
         day += timedelta(days=1)
+    out = out[-days:]
     return {"items": out, "total": len(out)}
 
 
