@@ -1,0 +1,48 @@
+{
+  "summary": "Phase 2 Admin Home / KPIs Dashboard — full end-to-end validation. Passwordless OTP login works via public preview URL; all 6 dashboard endpoints return correct data with prosper_session cookie; 401 without auth and 403 for client_admin role are both enforced on every endpoint. Frontend /admin renders the full dashboard: data-testid='admin-home' present, all 6 KPI tiles (AUM $23,175,000.00 · NAV 1.021415 · Revenue MTD $1,552.50 · Volume 30D $4,425,000.00 · Active Clients 2 · Ops Queue 0), three SVG charts (nav-chart, volume-chart, revenue-chart), top-clients table with both Finpact ($11.9M) and Alemany Capital ($11.3M), Ops Queue panel with 5 rows including 'KYB PENDING · 1 · Finpact PENDING', range switcher (7d/30d/90d) toggles the volume KPI label, and the Refresh button re-fires all 6 SWR network requests. 23/23 pytest cases pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/v1/admin/dashboard/volume",
+        "issue": "Returns N+1 items (e.g. 91 items for ?days=90, 31 for ?days=30, 8 for ?days=7) because the fill loop uses `while day <= now` without capping like /nav-history does (which slices `series[-days:]`). Chart still renders correctly because the frontend just maps items. Suggest adding `out = out[-days:]` before returning, or use `<` instead of `<=`."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/admin",
+        "issues": [
+          "Several /_next preloaded woff2 fonts (Plex Mono / Chivo) emit 'preloaded but not used' console warnings — purely cosmetic, no functional impact. Consider trimming the font preload list or wiring `display: swap` so warnings disappear."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_dashboard.py",
+    "/app/test_reports/pytest/phase2_dashboard.xml"
+  ],
+  "action_items": [
+    "(Minor) Cap /admin/dashboard/volume output to `days` items to match /nav-history's behaviour (off-by-one — currently returns N+1)."
+  ],
+  "critical_code_review_comments": [
+    "routes_dashboard.py · /nav-history: the aggregation pipeline is computed but `cum_principal` is then discarded — the NAV series is purely synthetic (1.0 * (1 + 0.085/365)^day). Either drop the unused pipeline (saves a Mongo round-trip) or actually feed `cum_principal` into the NAV math. As-is this is dead code masquerading as 'real-time'.",
+    "routes_dashboard.py · /revenue uses `timedelta(days=31 * (months-1))` to roll back N months — this is approximate and drifts (e.g. 12 months ago becomes ~341 days, not 365). Use `dateutil.relativedelta` or compute first-of-month math explicitly.",
+    "routes_dashboard.py · `aum_delta_24h` and `nav_delta_24h` are computed against `created_at <= yday` which on a freshly seeded DB returns identical values (delta = 0.00%) — the UI then shows '0.00% 24h' on AUM and NAV. Consider tying delta to a real prior-day snapshot (e.g. a daily NAV snapshot collection) so the KPIs aren't always flat in fresh environments.",
+    "routes_dashboard.py · `/ops-queue` returns `webhook_failing` and `reconciliation` as hardcoded zero placeholders — fine for now but please mark them with a `# TODO Phase 2.x` comment so they don't silently stay at 0 once webhooks/recon modules ship.",
+    "routes_dashboard.py is 303 lines and tightly couples 6 endpoints + aggregation pipelines — consider splitting per-endpoint files under /backend/routes/dashboard/ once the placeholders fill in."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2_dashboard.py (new — 23 pytest cases covering auth, 401, 403, KPI values, chart shapes, top-clients seed data, ops-queue rows)"
+  ],
+  "success_rate": {"backend": "100% (23/23 pytest cases)", "frontend": "100% (admin-home, 6 KPI tiles with correct values, 3 SVG charts, top-clients with Finpact+Alemany, 5 ops rows incl. KYB Finpact PENDING, range switcher 7d/30d/90d updates Volume KPI label, Refresh re-fires all 6 /admin/dashboard/* requests)"},
+  "test_credentials": "admin@prosper.foundation (super_admin) — passwordless OTP from /var/log/supervisor/backend.err.log. client.admin@alemany.capital (client_admin) for 403 negative tests. No password.",
+  "seed_data_creation": "No new seed data created — relied on auto-seed (seed_demo_transactions in server.py) which produces 6 months of positions/transactions for Finpact and Alemany. KPI values observed: AUM $23,175,000, Volume 30d $4,425,000, Revenue MTD $1,552.50, Revenue YTD $18,855.00, Active Clients 2.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: /root/.venv/bin/python -m pytest /app/backend/tests/test_phase2_dashboard.py -v --junitxml=/app/test_reports/pytest/phase2_dashboard.xml. BASE defaults to https://finance-control-215.preview.emergentagent.com, override with API_BASE env if testing locally. Login helper _login_session(email) returns a requests.Session with prosper_session cookie. OTP is read from /var/log/supervisor/backend.err.log within 0.4s of the /auth/passwordless-login call. data-testids used on admin page: admin-home, kpi-aum--usd-, kpi-nav, kpi-revenue---mtd, kpi-volume---30d, kpi-active-clients, kpi-ops-queue, nav-chart, volume-chart, revenue-chart, top-clients, data-table, ops-queue-panel, ops-row-{approvals|kyb-pending|open-alerts|webhooks-failing|reconciliation}, range-switcher, range-{7d|30d|90d}, dashboard-refresh.",
+  "rca of the issue": "No bugs reproduced. The only finding is the /volume endpoint off-by-one (returns days+1 items) which is cosmetic — the frontend chart handles it transparently. RCA: /volume uses `while day <= now` without slicing, while /nav-history uses the same loop but then does `series[-days:]`. Mitigation: add the same slice (or change <= to <) so both endpoints behave consistently."
+}
