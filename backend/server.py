@@ -152,7 +152,13 @@ async def passwordless_login(body: LoginIn):
     cont = secrets.token_urlsafe(24)
     await _otp_put(cont, otp, body.email.lower())
     await _send_otp(body.email, otp)
-    return {"code": cont}
+    payload = {"code": cont}
+    # Dev/preview convenience: when there's no real email transport configured
+    # we surface the OTP in the response so the user can sign in without
+    # tailing the backend log. Disabled automatically as soon as RESEND is set.
+    if not RESEND_API_KEY:
+        payload["dev_otp"] = otp
+    return payload
 
 
 def _domain_allowed(email: str, allowlist: list[str]) -> bool:

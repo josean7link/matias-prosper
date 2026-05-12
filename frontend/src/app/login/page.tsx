@@ -20,12 +20,16 @@ export default function LoginPage() {
     if (!email.trim()) return;
     setLoading(true);
     try {
-      const { code } = await api<{ code: string }>("/v1/auth/passwordless-login", {
-        method: "POST", body: JSON.stringify({ email: email.trim().toLowerCase() }),
-      });
+      const { code, dev_otp } = await api<{ code: string; dev_otp?: string }>(
+        "/v1/auth/passwordless-login", {
+          method: "POST", body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        });
       // Stash continuation + email in sessionStorage to bridge to OTP page
       sessionStorage.setItem("prosper_otp_code", code);
       sessionStorage.setItem("prosper_otp_email", email.trim().toLowerCase());
+      // In dev/preview the API surfaces the OTP so the user doesn't have to
+      // tail the backend log. The OTP page auto-fills the inputs.
+      if (dev_otp) sessionStorage.setItem("prosper_otp_dev", dev_otp);
       router.push(`/login/otp?next=${encodeURIComponent(next)}`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not send code");

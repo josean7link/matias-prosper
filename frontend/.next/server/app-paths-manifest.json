@@ -1,10 +1,6 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
   "/login/page": "app/login/page.js",
   "/login/otp/page": "app/login/otp/page.js",
-  "/apply/page": "app/apply/page.js",
-  "/apply/simulate/page": "app/apply/simulate/page.js",
-  "/apply/status/page": "app/apply/status/page.js",
   "/admin/page": "app/admin/page.js",
   "/admin/compliance/page": "app/admin/compliance/page.js"
 }

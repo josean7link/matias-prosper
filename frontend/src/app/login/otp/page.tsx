@@ -25,7 +25,30 @@ export default function OtpPage() {
     const e = sessionStorage.getItem("prosper_otp_email");
     if (!c || !e) { router.replace("/login"); return; }
     setCode(c); setEmail(e);
-    refs[0].current?.focus();
+    const dev = sessionStorage.getItem("prosper_otp_dev");
+    if (dev && /^\d{4}$/.test(dev)) {
+      // Dev/preview: API returned the OTP. Auto-submit using `c` directly so
+      // we don't depend on the React state having flushed.
+      sessionStorage.removeItem("prosper_otp_dev");
+      setDigits(dev.split(""));
+      setLoading(true);
+      api("/v1/auth/passwordless-token", {
+        method: "POST", body: JSON.stringify({ code: c, token: dev }),
+      })
+        .then(() => {
+          sessionStorage.removeItem("prosper_otp_code");
+          sessionStorage.removeItem("prosper_otp_email");
+          window.location.href = next;
+        })
+        .catch((err) => {
+          toast.error(err instanceof ApiError ? err.message : "Auto-verify failed");
+          setLoading(false);
+          setDigits(["", "", "", ""]);
+          refs[0].current?.focus();
+        });
+    } else {
+      refs[0].current?.focus();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -87,12 +110,17 @@ export default function OtpPage() {
   const resend = async () => {
     if (resendIn > 0 || !email) return;
     try {
-      const { code: newCode } = await api<{ code: string }>("/v1/auth/passwordless-login", {
-        method: "POST", body: JSON.stringify({ email }),
-      });
+      const { code: newCode, dev_otp } = await api<{ code: string; dev_otp?: string }>(
+        "/v1/auth/passwordless-login", {
+          method: "POST", body: JSON.stringify({ email }),
+        });
       sessionStorage.setItem("prosper_otp_code", newCode);
       setCode(newCode);
       setResendIn(20);
+      if (dev_otp && /^\d{4}$/.test(dev_otp)) {
+        setDigits(dev_otp.split(""));
+        setTimeout(() => submit(dev_otp), 250);
+      }
       toast.success("New code sent");
     } catch (err) {
       toast.error("Could not resend");
