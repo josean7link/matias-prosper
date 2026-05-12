@@ -21,6 +21,8 @@ ALERTS           = "alerts"
 AUDIT_LOGS       = "audit_logs"
 APPROVALS        = "approvals"
 NAV_SNAPSHOTS    = "nav_snapshots"
+ONBOARDING_APPLICATIONS = "onboarding_applications"
+WEBHOOK_EVENTS   = "webhook_events"
 
 _client: AsyncIOMotorClient | None = None
 

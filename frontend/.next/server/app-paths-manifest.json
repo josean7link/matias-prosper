@@ -1,5 +1,7 @@
 {
   "/login/page": "app/login/page.js",
   "/login/otp/page": "app/login/otp/page.js",
+  "/apply/page": "app/apply/page.js",
+  "/apply/simulate/page": "app/apply/simulate/page.js",
   "/admin/page": "app/admin/page.js"
 }

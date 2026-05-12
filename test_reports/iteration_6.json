@@ -1,0 +1,51 @@
+{
+  "summary": "Phase 3 Onboarding (AiPrise SIMULATED mode) tested end-to-end. Backend: 22/22 NEW pytests PASS (test_phase3_onboarding.py) plus 65/66 regression PASS (1 pre-existing module-path failure in test_phase1.py is unrelated to Phase 3). Frontend: /apply public form renders all required data-testid fields, middleware whitelist works (no redirect to /login), form submits via POST /api/v1/onboarding/apply and routes to /apply/simulate with sim_kyb_ session id. Simulate page renders the DEV SIM badge + sim-approve/sim-reject/sim-review buttons. HOWEVER — clicking sim-approve does NOT navigate to /apply/status: the page stays on /apply/simulate because the `next=` query param embedded in the simulator URL points to the INTERNAL K8s cluster host (`finance-control-215.cluster-8.preview.emergentcf.cloud`) instead of the public preview URL. This is a backend bug in routes/onboarding.py::_public_base_url which uses request.url.netloc (K8s internal host) instead of honoring X-Forwarded-Host/X-Forwarded-Proto.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/v1/onboarding/apply", "issue": "_public_base_url(request) returns the INTERNAL K8s cluster hostname (finance-control-215.cluster-8.preview.emergentcf.cloud) instead of the public preview origin. The internal host is baked into the simulator hosted_url's `next=` query param and also into the AiPrise callback_url. Result: the browser cannot navigate from /apply/simulate to /apply/status (the public URL is unreachable from the public browser); in LIVE mode the AiPrise webhook callback_url would also point at the unreachable internal host. Fix: use request.headers.get('x-forwarded-host')+x-forwarded-proto, OR introduce PUBLIC_BASE_URL env var and use that.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/v1/webhooks/aiprise/kyc", "issue": "Returns 404 for unknown sessions but error path persists nothing to webhook_events (the doc is only persisted after _verify_and_log). Not breaking, but forensic visibility is limited."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "apply/simulate/page.tsx", "issue": "After POST /apply/simulate succeeds, the redirect target (the `next=` URL) embeds the INTERNAL cluster hostname so window.location/router.push silently fails — user is stranded on the simulate page with the Approve button stuck in loading state ('...'). Net effect: /apply/status is never reached via the simulator flow on the preview URL.", "selector": "[data-testid='sim-approve']", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "/apply → /apply/simulate → /apply/status (E2E happy path)", "issue": "Breaks at simulate→status hop because backend-supplied `next` URL uses the internal cluster host. Backend pytest direct hits to /apply/simulate work fine; only the browser redirect breaks.", "affected_selectors": ["[data-testid='sim-approve']", "[data-testid='sim-reject']", "[data-testid='sim-review']"]}
+    ],
+    "design_issues": [
+      {"screen": "/apply/simulate", "issues": ["Confirm whether the simulate page should call the API and *then* navigate using its own knowledge of the app_id (passed as ?ref=app_xxx) rather than trusting the backend-supplied `next` URL. That would also remove the leak of internal cluster hostnames to the client."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase3_onboarding.py",
+    "/app/test_reports/pytest/phase3_onboarding.xml"
+  ],
+  "action_items": [
+    "FIX HIGH: routes/onboarding.py::_public_base_url should honor x-forwarded-host + x-forwarded-proto (set by the K8s ingress) so the simulator `next=` URL and the AiPrise callback_url use the public preview origin, not the internal cluster host. Same fix unblocks LIVE-mode webhook delivery later.",
+    "After backend fix, retest the frontend E2E (/apply → submit → simulate → sim-approve → /apply/status). Until then, the visible status badge ('Application approved' + 'sim' badge) cannot be verified through the UI.",
+    "Consider: /apply/simulate page should compute its own destination from ?ref=<app_id> instead of trusting `next=` (defense in depth)."
+  ],
+  "critical_code_review_comments": [
+    "onboarding.py L68 _public_base_url uses request.url.netloc directly — anti-pattern behind a reverse proxy. Always prefer X-Forwarded-Host/X-Forwarded-Proto when running behind an ingress, or read PUBLIC_BASE_URL from env. This same bug will break the AiPrise LIVE webhook callback once template IDs are configured.",
+    "webhooks_aiprise.py L109 — when signature fails verification we insert a 'rejected_signature' webhook_events doc but never sanitize/truncate the signature header. Low risk but consider hashing the offending sig.",
+    "compliance.py works fine; super_admin allowed, client_admin correctly 403; pydantic Literal validation on decision enum is good.",
+    "aiprise.py L181 — verify_signature returning True when secret is empty is documented and correct for sim mode. Add a startup assertion that in production (AIPRISE_ENVIRONMENT=production) the webhook_secret MUST be non-empty, otherwise fail-fast.",
+    "Pre-existing: backend/tests/test_phase1.py::test_audit_helper_raises_on_mutation_calls fails with ModuleNotFoundError: 'db' because the test imports without sys.path setup. Trivial test infra fix — pytest passes when invoked via /root/.venv/bin/python -m pytest from /app due to PYTHONPATH=/app/backend but this particular test seems to invoke a sub-import after re-init. Non-blocking for Phase 3."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase3_onboarding.py (new — 22 tests covering /apply, /apply/{id} sanitization, /apply/simulate happy + rejected + pending_review, KYB & KYC webhook HMAC empty-secret acceptance + invalid JSON + missing fields + unknown session, /compliance/summary auth + admin OK + client_admin 403, /compliance/applications list + decide approved + client_admin 403, /compliance/kyc-cases, /onboarding/me/kyc auth + client_admin flow)"
+  ],
+  "success_rate": {
+    "backend": "100% on Phase 3 (22/22 new pytests). Overall regression 65/66 (1 pre-existing test_phase1 module-path issue, unrelated).",
+    "frontend": "75% — /apply form (PASS), middleware whitelist (PASS), POST /apply (PASS), redirect to /apply/simulate (PASS), DEV SIM + 3 sim buttons (PASS), logo NOT duplicated on /apply (PASS, 0 dup). FAILS: sim-approve → /apply/status navigation (HIGH bug — internal host in `next=`)."
+  },
+  "test_credentials": "admin@prosper.foundation (super_admin), client.admin@alemany.capital (client_admin). Passwordless OTP read from /var/log/supervisor/backend.err.log (regex '<email> -> <6 digits>'). Both verified working in this iteration.",
+  "seed_data_creation": "Each test creates fresh TEST_Holdings_<uuid8> orgs / app docs via POST /apply. ~10 new orgs + ~10 onboarding_applications inserted in DB this run. No cleanup performed (collection is append-only by design and uses unique generated org_id/app_id).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 3 backend is rock solid in SIMULATED mode (22/22 pytest GREEN). The single remaining issue blocks frontend E2E: the backend-baked `next=` URL on the simulator hosted_url uses the K8s INTERNAL host instead of the public preview origin. After the main agent fixes _public_base_url (likely 5-line change: prefer X-Forwarded-Host + X-Forwarded-Proto headers, fallback to request.url.netloc), retest by: (a) curl POST /api/v1/onboarding/apply on the public URL and confirm hosted_url's `next=` starts with https://finance-control-215.preview.emergentagent.com; (b) Playwright /apply → fill → submit → click sim-approve → expect /apply/status with green CheckCircle and 'approved'. /admin/compliance UI was not exercised in this iteration due to budget; backend compliance endpoints fully pytested (auth, role 403, decide, list, summary, kyc-cases).",
+  "rca of the issue": "Backend onboarding.py defines `_public_base_url(req) = f\"{req.url.scheme}://{req.url.netloc}\"`. Behind the K8s ingress, FastAPI's `request.url.netloc` reports the internal upstream host (e.g. finance-control-215.cluster-8.preview.emergentcf.cloud) because the ingress rewrites the upstream Host header. The public origin only survives in `X-Forwarded-Host` + `X-Forwarded-Proto`. The bad internal URL is then concatenated into (1) the simulator hosted_url's `next=` query (breaks UI redirect to /apply/status on the public site) and (2) the AiPrise callback_url passed when creating verification sessions (will break the LIVE webhook delivery once AIPRISE_KYB_TEMPLATE_ID is configured). Reproduction: curl -s https://finance-control-215.preview.emergentagent.com/api/v1/onboarding/apply -X POST -H 'content-type: application/json' --data-binary '{...}' | jq -r .hosted_url — the `next=` value embeds the internal cluster host. Mitigation: replace _public_base_url with: `proto = req.headers.get('x-forwarded-proto', req.url.scheme); host = req.headers.get('x-forwarded-host', req.url.netloc); return f'{proto}://{host}'`. Optionally read PUBLIC_BASE_URL from env as override for tests."
+}
