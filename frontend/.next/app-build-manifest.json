@@ -26,10 +26,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/admin/layout.js"
     ],
-    "/client/page": [
+    "/admin/compliance/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/client/page.js"
+      "static/chunks/app/admin/compliance/page.js"
+    ],
+    "/client/yield/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/client/yield/page.js"
     ],
     "/client/layout": [
       "static/chunks/webpack.js",

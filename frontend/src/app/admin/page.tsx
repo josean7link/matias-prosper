@@ -1,14 +1,18 @@
-import { PageHeader } from "@/components/Page";
+import { PageHeader } from "@prosper/ui";
 import { KpiCard } from "@prosper/ui";
+import { RefreshButton } from "@/components/PageActions";
 
 export default function AdminHomePage() {
   return (
     <div>
       <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Home" }]}
         kicker="Phase 0 · Bootstrap"
         title="Admin Home"
         subtitle="Foundation in place. Business modules ship in the next phases."
+        actions={<RefreshButton />}
       />
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <KpiCard label="Active Tenants" value="—" hint="Wires up in Phase 2" />
         <KpiCard label="AUM (USD)"      value="—" hint="Wires up in Phase 6" />
@@ -29,6 +33,7 @@ export default function AdminHomePage() {
           <li>✓ Design system with Prosper palette + IBM Plex Sans / Chivo / Plex Mono.</li>
           <li>✓ Layout shell with collapsible sidebar, env switcher, alerts bell and avatar menu.</li>
           <li>✓ Docker Compose for api + mongo + redis + mailhog; Vitest + Pytest smoke tests.</li>
+          <li>✓ Shared PageHeader (breadcrumbs · kicker · title · subtitle · actions slot) across both portals.</li>
         </ul>
       </div>
     </div>

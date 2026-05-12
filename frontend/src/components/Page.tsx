@@ -1,18 +1,9 @@
-export function PageHeader({ title, subtitle, kicker }: {
-  title: string; subtitle?: string; kicker?: string;
-}) {
-  return (
-    <div className="mb-8" data-testid="page-header">
-      {kicker && (
-        <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle mb-1">
-          {kicker}
-        </div>
-      )}
-      <h1 className="font-display font-bold text-3xl text-fg leading-tight">{title}</h1>
-      {subtitle && <p className="text-sm text-fg-muted mt-1.5">{subtitle}</p>}
-    </div>
-  );
-}
+/**
+ * Re-exports + local-only helpers for app pages.
+ * PageHeader now lives in @prosper/ui — import it from there directly.
+ */
+export { PageHeader } from "@prosper/ui";
+export type { Breadcrumb } from "@prosper/ui";
 
 export function ComingSoon({ what }: { what: string }) {
   return (

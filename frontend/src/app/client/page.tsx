@@ -1,18 +1,21 @@
-import { PageHeader } from "@/components/Page";
-import { KpiCard } from "@prosper/ui";
+import { PageHeader, KpiCard } from "@prosper/ui";
+import { RefreshButton } from "@/components/PageActions";
 
 export default function ClientHomePage() {
   return (
     <div>
       <PageHeader
+        breadcrumbs={[{ label: "Client", href: "/client" }, { label: "Dashboard" }]}
         kicker="Phase 0 · Client portal"
         title="Bienvenido a Prosper"
         subtitle="Tu portal de inversión en yield tokenizado regulado."
+        actions={<RefreshButton />}
       />
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <KpiCard label="Saldo disponible" value="—" hint="Disponible en próximas fases" />
-        <KpiCard label="Total invertido"  value="—" hint="Disponible en próximas fases" />
-        <KpiCard label="Rendimiento acumulado" value="—" hint="Disponible en próximas fases" />
+        <KpiCard label="Saldo disponible"       value="—" hint="Disponible en próximas fases" />
+        <KpiCard label="Total invertido"        value="—" hint="Disponible en próximas fases" />
+        <KpiCard label="Rendimiento acumulado"  value="—" hint="Disponible en próximas fases" />
       </div>
 
       <div className="prosper-card p-6">
