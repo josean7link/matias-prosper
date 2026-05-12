@@ -331,11 +331,12 @@ function Stat({ label, value, tone, testid }:
       <div className="text-[10px] uppercase tracking-[0.15em] font-mono text-fg-subtle">
         {label}
       </div>
-      <div className={cn("font-display font-extrabold text-2xl text-fg
-                          tabular mt-1 leading-tight font-mono",
-                          tone === "danger" && "text-danger",
-                          tone === "warning" && "text-warning",
-                          tone === "success" && "text-success")}>
+      <div className={cn(
+        "font-display font-extrabold text-2xl text-fg tabular mt-1 leading-tight font-mono",
+        tone === "danger" && "text-danger",
+        tone === "warning" && "text-warning",
+        tone === "success" && "text-success",
+      )}>
         {value ?? "—"}
       </div>
     </div>

@@ -66,7 +66,21 @@ class ApplicationOut(BaseModel):
 
 
 def _public_base_url(req: Request) -> str:
-    return f"{req.url.scheme}://{req.url.netloc}"
+    """Resolve the public origin even when running behind a reverse proxy.
+
+    The K8s ingress sets X-Forwarded-Host + X-Forwarded-Proto with the public
+    hostname; req.url.netloc by itself would return the internal upstream
+    cluster host, which would break webhook callbacks AND the redirect URLs
+    we embed in the AiPrise hosted page.
+    """
+    override = os.environ.get("PUBLIC_BASE_URL", "").strip()
+    if override:
+        return override.rstrip("/")
+    proto = req.headers.get("x-forwarded-proto", req.url.scheme)
+    host  = req.headers.get("x-forwarded-host",  req.url.netloc)
+    # `x-forwarded-host` can be a comma-separated list — keep the first hop
+    host = host.split(",")[0].strip()
+    return f"{proto}://{host}"
 
 
 # ---------------------------------------------------------------------------
