@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import useSWR from "swr";
 import { PageHeader } from "@prosper/ui";
 import { RefreshCw } from "lucide-react";
 
@@ -9,15 +10,28 @@ import { VolumeChart } from "@/components/dashboard/VolumeChart";
 import { RevenueChart } from "@/components/dashboard/RevenueChart";
 import { TopClientsTable } from "@/components/dashboard/TopClientsTable";
 import { OpsQueuePanel } from "@/components/dashboard/OpsQueuePanel";
+import { RecentActivity } from "@/components/dashboard/RecentActivity";
+import ExportPdfButton from "@/components/dashboard/ExportPdfButton";
 
 import {
   useDashboardKpis, useNavHistory, useVolume,
-  useRevenue, useTopClients, useOpsQueue,
+  useRevenue, useTopClients, useOpsQueue, useRecentActivity,
 } from "@/lib/dashboard";
+import { useOpsQueueWS } from "@/lib/useOpsQueueWS";
+import { api } from "@/lib/api";
 import { fmtMoney, fmtNum, cn } from "@/lib/utils";
 
 type Range = "7d" | "30d" | "90d";
 const rangeDays: Record<Range, number> = { "7d": 7, "30d": 30, "90d": 90 };
+
+const tooltips = {
+  aum:      "AUM = Σ (principal_usd + accrued_interest) of every active position. 24h Δ compares to positions snapshot ≤ 24h ago.",
+  nav:      "NAV = today's snapshot from the nav_snapshots collection (real, not synthetic). 24h Δ vs yesterday's snapshot.",
+  revenue:  "Revenue MTD = Σ fee_amount on confirmed transactions since the first of this month. YTD since Jan 1.",
+  volume:   "Volume = Σ amount on confirmed subscribe + redeem transactions in the selected range.",
+  active:   "Active clients = distinct org_id values across positions with status='active'.",
+  ops:      "Ops queue = approvals with status='pending'. KYB / alerts / webhooks shown in the right-side panel.",
+};
 
 export default function AdminHomePage() {
   const [range, setRange] = useState<Range>("30d");
@@ -27,16 +41,23 @@ export default function AdminHomePage() {
   const volume   = useVolume(rangeDays[range]);
   const revenue  = useRevenue(12);
   const clients  = useTopClients(8);
-  const ops      = useOpsQueue();
+  const opsHttp  = useOpsQueue();
+  const opsWs    = useOpsQueueWS();
+  const activity = useRecentActivity(8);
+  const meSwr    = useSWR<{ user: { email: string } }>("/v1/me", (p: string) => api(p));
+
+  // Prefer WS data when available; fall back to HTTP polling
+  const opsData = opsWs.data ?? opsHttp.data;
 
   const k = kpis.data;
-  const navLast = nav.data?.items.at(-1)?.nav;
+  const navLast = nav.data?.items.at(-1);
 
   const refresh = () => {
     kpis.mutate();    nav.mutate();    volume.mutate();
-    revenue.mutate(); clients.mutate(); ops.mutate();
+    revenue.mutate(); clients.mutate(); opsHttp.mutate();
+    activity.mutate();
   };
-  const anyLoading = kpis.isLoading || ops.isLoading;
+  const anyLoading = kpis.isLoading;
 
   return (
     <div data-testid="admin-home">
@@ -48,6 +69,14 @@ export default function AdminHomePage() {
         actions={
           <div className="flex items-center gap-2">
             <RangeSwitcher value={range} onChange={setRange} />
+            <ExportPdfButton
+              generatedAt={k?.generated_at ?? new Date().toISOString()}
+              generatedBy={meSwr.data?.user?.email ?? "admin@prosper.foundation"}
+              kpis={k}
+              navLast={navLast}
+              revenue={revenue.data?.items ?? []}
+              topClients={clients.data?.items ?? []}
+            />
             <button
               onClick={refresh}
               className="prosper-btn-ghost h-9 text-xs gap-1.5"
@@ -72,25 +101,29 @@ export default function AdminHomePage() {
           delta={k?.aum_delta_24h}
           hint="24h"
           loading={kpis.isLoading}
+          tooltip={tooltips.aum}
         />
         <KpiTile
           label="NAV"
-          value={navLast != null ? navLast.toFixed(6) : (k?.nav?.toFixed(6) ?? "—")}
+          value={navLast?.nav != null ? navLast.nav.toFixed(6) : (k?.nav?.toFixed(6) ?? "—")}
           delta={k?.nav_delta_24h}
           hint="24h"
           loading={kpis.isLoading || nav.isLoading}
+          tooltip={tooltips.nav}
         />
         <KpiTile
           label="Revenue · MTD"
           value={fmtMoney(k?.revenue_mtd)}
           hint={`YTD ${fmtMoney(k?.revenue_ytd)}`}
           loading={kpis.isLoading}
+          tooltip={tooltips.revenue}
         />
         <KpiTile
           label={`Volume · ${range}`}
           value={fmtMoney(k?.volume_30d)}
           hint="subscribe + redeem"
           loading={kpis.isLoading}
+          tooltip={tooltips.volume}
         />
         <KpiTile
           label="Active Clients"
@@ -98,6 +131,7 @@ export default function AdminHomePage() {
           hint="with open positions"
           loading={kpis.isLoading}
           href="/admin/clients"
+          tooltip={tooltips.active}
         />
         <KpiTile
           label="Ops Queue"
@@ -105,17 +139,18 @@ export default function AdminHomePage() {
           hint="pending approvals"
           loading={kpis.isLoading}
           href="/admin/operations"
+          tooltip={tooltips.ops}
         />
       </section>
 
-      {/* Main grid: charts (left, 8 cols) + ops queue (right, 4 cols) */}
+      {/* Main grid: charts (left, 8 cols) + right side (ops queue + recent activity) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* LEFT — charts + table */}
         <div className="lg:col-span-8 space-y-6">
           <ChartCard
             title="NAV"
-            subtitle="Daily net asset value · 90 days"
-            kpi={navLast != null ? navLast.toFixed(6) : "—"}
+            subtitle="Daily net asset value · 90 days · real snapshots"
+            kpi={navLast?.nav != null ? navLast.nav.toFixed(6) : "—"}
             loading={nav.isLoading}
           >
             <NavChart data={nav.data?.items ?? []} />
@@ -160,10 +195,18 @@ export default function AdminHomePage() {
           </section>
         </div>
 
-        {/* RIGHT — operations queue (sticky on desktop) */}
+        {/* RIGHT — ops queue + recent activity (sticky stack on desktop) */}
         <div className="lg:col-span-4">
-          <div className="lg:sticky lg:top-4">
-            <OpsQueuePanel data={ops.data} loading={ops.isLoading} />
+          <div className="lg:sticky lg:top-4 space-y-6">
+            <OpsQueuePanel
+              data={opsData}
+              loading={opsHttp.isLoading && !opsWs.data}
+              wsStatus={opsWs.status}
+            />
+            <RecentActivity
+              data={activity.data?.items ?? []}
+              loading={activity.isLoading}
+            />
           </div>
         </div>
       </div>

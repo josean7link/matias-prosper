@@ -5,6 +5,7 @@ import { ArrowUpRight, Bell, ClipboardCheck, FileCheck2, GitMerge, Webhook } fro
 import { Badge, StatusDot } from "@prosper/ui";
 import { cn } from "@/lib/utils";
 import type { OpsQueue, OpsQueueGroup, OpsQueueItem } from "@/lib/dashboard";
+import type { WsStatus } from "@/lib/useOpsQueueWS";
 
 type Variant = "danger" | "warning" | "primary" | "muted";
 
@@ -70,7 +71,7 @@ function Row({ icon, label, group, href, variant = "primary", flash, itemLabel }
   );
 }
 
-export function OpsQueuePanel({ data, loading }: { data: OpsQueue | undefined; loading?: boolean }) {
+export function OpsQueuePanel({ data, loading, wsStatus }: { data: OpsQueue | undefined; loading?: boolean; wsStatus?: WsStatus }) {
   // Flash highlight when total count changes
   const total = data
     ? data.approvals.count + data.kyb.count + data.alerts.count + data.webhook_failing.count + data.reconciliation.count

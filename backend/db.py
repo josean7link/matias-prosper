@@ -20,6 +20,7 @@ WEBHOOKS         = "webhook_endpoints"
 ALERTS           = "alerts"
 AUDIT_LOGS       = "audit_logs"
 APPROVALS        = "approvals"
+NAV_SNAPSHOTS    = "nav_snapshots"
 
 _client: AsyncIOMotorClient | None = None
 

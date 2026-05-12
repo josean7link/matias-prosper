@@ -26,7 +26,8 @@ from auth import (
 from audit import log_action, audited
 from seed import seed_phase1
 from seed_demo import seed_demo_transactions
-from routes_dashboard import router as dashboard_router
+from nav_snapshots import backfill_nav_snapshots
+from routes.dashboard import router as dashboard_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("prosper")
@@ -66,6 +67,8 @@ async def startup():
     logger.info(f"Seed: orgs={seeded['orgs']} users={seeded['users']}")
     demo = await seed_demo_transactions(days=180)
     logger.info(f"Demo tx seed: {demo}")
+    snaps = await backfill_nav_snapshots(days=180)
+    logger.info(f"NAV snapshot backfill: {snaps}")
 
 
 @app.on_event("shutdown")

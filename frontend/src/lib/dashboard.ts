@@ -54,3 +54,24 @@ export function useTopClients(limit = 10) {
 export function useOpsQueue() {
   return useSWR<OpsQueue>(`/v1/admin/dashboard/ops-queue`, fetcher, { refreshInterval: 30_000 });
 }
+
+export interface ActivityItem {
+  tx_id: string;
+  org_id: string;
+  org_name: string;
+  type: "subscribe" | "redeem" | string;
+  amount: number;
+  asset: string;
+  fee_amount: number;
+  prosper_tx_id: string;
+  tx_hash?: string | null;
+  created_at: string;
+  memo?: string | null;
+}
+export function useRecentActivity(limit = 8) {
+  return useSWR<{ items: ActivityItem[] }>(
+    `/v1/admin/dashboard/recent-activity?limit=${limit}`,
+    fetcher,
+    { refreshInterval: 30_000 },
+  );
+}

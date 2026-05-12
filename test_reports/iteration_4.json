@@ -1,0 +1,69 @@
+{
+  "summary": "Sprint A end-to-end validation. Backend: 23/23 Phase 2 regression cases still green after the per-endpoint split under /backend/routes/dashboard/, plus 9/9 NEW Sprint A pytest cases (recent-activity 200/401/403/limit, real NAV variation + idempotent 180-count, WebSocket admin/no-cookie/client_admin via localhost:8001). Frontend: /admin renders without build-error overlay, KPI tooltips work for all 6 tiles (AUM tooltip text 'AUM = Σ (principal_usd + accrued_interest)...' visible on hover), Recent Activity panel shows 8 rows with org_name + ptx_xxx…xxxx + relative time + colored +/- amounts (e.g. 'Alemany Capital · ptx_3a…cf23 · 1d ago · +$250,000.00 · subscribe'), 6 KPIs / 3 SVG charts / top-clients / range switcher / refresh all functional. TWO real frontend bugs found: (1) Export PDF throws 'RangeError: Offset is outside the bounds of the DataView' inside @react-pdf/renderer → no Blob, no download, button never shows 'Generating…' because the error escapes through try/finally without a catch. (2) data-testid='ops-queue-status' is missing from OpsQueuePanel — the header renders hardcoded 'Live · 30s' instead of reflecting wsStatus ('Live · ws' / 'Live · 30s' / 'Connecting…'). WS through the preview ingress is closed before handshake (expected), and the HTTP polling fallback works, but the user has no visual indicator of which transport is active.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ExportPdfButton",
+        "issue": "Clicking 'Export PDF' produces RangeError: 'Offset is outside the bounds of the DataView' (thrown from @react-pdf/renderer). No download is triggered, no Blob is created, and the button never flips to 'Generating…' (the error escapes setBusy(true)→finally and the React state update is reverted on re-render). Reproduced twice with 45s timeout on Chromium 1920x1080 via the preview URL.",
+        "selector": "[data-testid=\"dashboard-export-pdf\"]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "OpsQueuePanel",
+        "issue": "Required data-testid 'ops-queue-status' is MISSING. The header always renders the hardcoded literal 'Live · 30s' and ignores the wsStatus prop. Spec says it must render 'Live · ws' / 'Live · 30s' / 'Connecting…' and never be blank, with a data-testid for testing the active transport.",
+        "selector": "[data-testid=\"ops-queue-status\"] (not in DOM — only ops-queue-panel + ops-row-* exist)",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "WebSocket ops-queue (preview URL)",
+        "issue": "wss://finance-control-215.preview.emergentagent.com/api/v1/admin/dashboard/ws/ops-queue is closed before the handshake completes (Kubernetes ingress does not forward WS frames). This is acknowledged in the brief and the HTTP polling fallback DOES populate the panel within ~1s. However, because issue #2 above hides the transport indicator, the user can't tell which path is live. WS itself works against localhost:8001 (admin gets snapshot, no-cookie → 4401, client_admin → 4403 — all green in pytest).",
+        "affected_selectors": ["[data-testid=\"ops-queue-status\"]"]
+      }
+    ],
+    "design_issues": [
+      {
+        "screen": "/admin",
+        "issues": [
+          "Multiple /_next preloaded woff2 fonts emit 'preloaded but not used' warnings (carry-over from iteration 3, cosmetic only)."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_dashboard.py",
+    "/app/backend/tests/test_sprint_a.py",
+    "/app/test_reports/pytest/phase2_dashboard.xml",
+    "/app/test_reports/pytest/sprint_a.xml"
+  ],
+  "action_items": [
+    "Fix ExportPdfButton: the @react-pdf/renderer 'Offset is outside the bounds of the DataView' error typically means a Font.register() source can't be parsed (wrong path, ttf vs otf, fetched HTML instead of binary, or a transparent PNG truncated). 1) Wrap the onClick in try/catch and surface the error in a toast so the user knows. 2) Check DashboardReport.tsx Font.register calls / any Image src — fetch them server-side or remove and use built-in Helvetica to confirm. 3) Verify @react-pdf/renderer version in package.json supports Next.js 14 (some 3.x builds need a webpack alias for 'react-pdf-html').",
+    "Fix OpsQueuePanel: add data-testid='ops-queue-status' to the header label and bind its text to the wsStatus prop ('connected' → 'Live · ws', 'polling' → 'Live · 30s', 'connecting' → 'Connecting…'). It currently ignores wsStatus and hardcodes 'Live · 30s' at /app/frontend/src/components/dashboard/OpsQueuePanel.tsx:97.",
+    "(Optional) Document that WS through the preview ingress is expected to fall back to polling; the wsStatus pill should communicate that to the user."
+  ],
+  "critical_code_review_comments": [
+    "ExportPdfButton onClick uses try/finally with no catch — async errors from pdf(doc).toBlob() bubble up as unhandled rejections and the busy state is invisible because React batches the setBusy(true) with the synchronous-throw setBusy(false). Add an explicit catch that logs and surfaces a toast.",
+    "OpsQueuePanel signature accepts `wsStatus?: WsStatus` but never reads it — the prop is dead. Either render it (per spec) or remove it from the component signature.",
+    "ws.py: cookie parsing happens BEFORE ws.accept(), good. But after accept the `await ws.receive_text()` blocks on the client; if the client never sends a message we still poll every POLL_SECONDS via the timeout — correct. Consider adding a `finally: await ws.close()` for cleaner shutdown on cancellation.",
+    "nav_snapshots.py: the unique index is created AFTER insert_many — if two backend instances both hit empty collection during startup they could each insert 180 docs. Create the unique index up-front (or rely on `estimated_document_count()` + a startup lock) to make backfill truly safe in multi-replica deployments.",
+    "recent_activity.py: org lookup is a separate roundtrip; for hot pages consider an aggregation $lookup pipeline or a 60s in-memory cache of org_id → commercial_name."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint_a.py (NEW — 9 pytest cases: recent-activity 401/403/200/limit, nav-history real-variation + 180-count idempotent, WebSocket admin/no-cookie/client_admin via localhost:8001)"
+  ],
+  "success_rate": {
+    "backend": "100% (23/23 Phase 2 regression + 9/9 Sprint A new = 32/32 pytest cases)",
+    "frontend": "~80% (tooltips ✓, recent-activity ✓, KPIs ✓, charts ✓, top-clients ✓, range switcher ✓, refresh ✓, build-error overlay absent ✓. FAIL: Export PDF download, ops-queue-status testid + wsStatus rendering)"
+  },
+  "test_credentials": "admin@prosper.foundation (super_admin) and client.admin@alemany.capital (client_admin). Passwordless OTP — code in /var/log/supervisor/backend.err.log after POST /auth/passwordless-login.",
+  "seed_data_creation": "None. Auto-seed produces nav_snapshots count = 180 (idempotent), 6 months of positions/transactions. KPI values observed unchanged from iteration 3: AUM $23,175,000, NAV 1.042703, Volume 30d $4,425,000, Revenue MTD $1,552.50.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run both regression + Sprint A: /root/.venv/bin/python -m pytest /app/backend/tests/test_phase2_dashboard.py /app/backend/tests/test_sprint_a.py -v. WebSocket tests use ws://localhost:8001 — the preview ingress closes WS before handshake (expected). Frontend admin testids in use: admin-home, kpi-{aum--usd-|nav|revenue---mtd|volume---30d|active-clients|ops-queue}, {kpi-id}-tooltip-trigger, {kpi-id}-tooltip, nav-chart, volume-chart, revenue-chart, top-clients, ops-queue-panel, ops-row-{approvals|kyb-pending|open-alerts|webhooks-failing|reconciliation}, recent-activity, activity-row-{tx_id}, dashboard-export-pdf, dashboard-refresh, range-{7d|30d|90d}. NOT in DOM (but spec requires): ops-queue-status.",
+  "rca of the issue": "Bug 1 — Export PDF: The pdf(doc).toBlob() promise rejects synchronously inside @react-pdf/renderer with 'RangeError: Offset is outside the bounds of the DataView' (visible as a window 'pageerror'). This is the canonical @react-pdf/renderer error when a Font.register source returns non-binary data (e.g. fetched a 404 HTML page) or when an embedded image's bytes are truncated. Because ExportPdfButton uses try/finally (no catch), the rejection propagates as unhandled and the temporary busy state never flushes to DOM before finally resets it; the click feels like a no-op. Mitigation: add a catch + toast, then inspect DashboardReport.tsx Font.register / Image src URLs — most likely a CDN font path is being fetched cross-origin and returning text/html. Quick repro: open devtools Network, click Export PDF — look for a non-200 or text/* response. Bug 2 — ops-queue-status: OpsQueuePanel.tsx line 97 hardcodes `<div ...>Live · 30s</div>` instead of `<div data-testid=\"ops-queue-status\">{wsStatus === 'connected' ? 'Live · ws' : wsStatus === 'connecting' ? 'Connecting…' : 'Live · 30s'}</div>`. The wsStatus prop is declared but never consumed. Easy 5-line fix."
+}
