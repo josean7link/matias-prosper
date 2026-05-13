@@ -5,10 +5,11 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Home, Briefcase, ChartBar, ShieldCheck, Users, LayoutDashboard,
   ArrowDownUp, TrendingUp, Coins, User, Sparkles,
-  ChevronLeft, ChevronRight, Bell, LogOut, Moon, Sun,
+  ChevronLeft, ChevronRight, LogOut, Moon, Sun,
 } from "lucide-react";
 import { ProsperLogo } from "./ProsperLogo";
 import { SandboxBanner } from "./SandboxBanner";
+import AlertsBell from "./AlertsBell";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -164,14 +165,7 @@ export function AppShell({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              className="prosper-btn-ghost h-9 w-9 p-0 relative"
-              aria-label="Notifications"
-              data-testid="alerts-bell"
-            >
-              <Bell size={16} />
-              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-primary rounded-full" />
-            </button>
+            <AlertsBell />
             <button
               onClick={toggleTheme}
               className="prosper-btn-ghost h-9 w-9 p-0"

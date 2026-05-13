@@ -23,6 +23,12 @@ APPROVALS        = "approvals"
 NAV_SNAPSHOTS    = "nav_snapshots"
 ONBOARDING_APPLICATIONS = "onboarding_applications"
 WEBHOOK_EVENTS   = "webhook_events"
+# Phase 5 — Compliance
+KYT_RULES        = "kyt_rules"
+KYT_ALERTS       = "kyt_alerts"
+RISK_SCORES      = "risk_scores"
+WATCHLIST        = "watchlist_entries"
+LIMITS_HISTORY   = "limits_history"
 
 _client: AsyncIOMotorClient | None = None
 

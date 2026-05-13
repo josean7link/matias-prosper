@@ -115,6 +115,41 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/admin/business/page.js"
+    ],
+    "/admin/compliance/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/compliance/layout.js"
+    ],
+    "/admin/compliance/kyc/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/compliance/kyc/page.js"
+    ],
+    "/admin/compliance/kyb/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/compliance/kyb/page.js"
+    ],
+    "/admin/compliance/kyt/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/compliance/kyt/page.js"
+    ],
+    "/admin/compliance/risk/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/compliance/risk/page.js"
+    ],
+    "/admin/compliance/alerts/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/compliance/alerts/page.js"
+    ],
+    "/admin/compliance/limits/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/compliance/limits/page.js"
     ]
   }
 }

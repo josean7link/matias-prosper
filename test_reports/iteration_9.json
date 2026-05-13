@@ -1,0 +1,75 @@
+{
+  "summary": "Phase 5 Compliance module — 41/41 backend pytest passed (RBAC, seed counts, KYB checklist enforcement, wallet screen stub, limits edit+history, Pydantic validation). Frontend: discovered a CRITICAL app-breaking runtime error in the shared Badge component (`tone='info'` not defined in TONES → TypeError 'Cannot read properties of undefined (reading bg)') that crashed /admin/compliance/kyt, /admin/compliance/alerts, and /admin/compliance/risk. Applied a single-line fix in /app/packages/ui/src/Badge.tsx to add `info` tone (same palette as `primary`). After the fix, all 6 compliance sub-pages render correctly: KYT shows 7 rules + 25 alerts + 100 travel-rule txs + wallet screening returning 'unavailable'; Risk donut + top10 + SAR/STR buttons present; Alerts page renders with 10 filter chips + bulk-ack/bulk-resolve buttons; Limits shows 208 caps (52×4) + 52 history buttons with inline edit working; AlertsBell shows count=3 and 5 latest items.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "packages/ui/src/Badge.tsx",
+        "issue": "FIXED by testing agent: `tone='info'` was used by KYT/Alerts/Risk pages (SEV_TONE maps severity 'info' → 'info'; risk page maps 'medium' → 'info') but the TONES record only had default|primary|success|warning|danger. This caused `c = TONES['info']` to be undefined and threw `TypeError: Cannot read properties of undefined (reading 'bg')` which crashed the entire page via the React error boundary. Added an `info` entry (same palette as primary) to TONES.",
+        "selector": "Badge[tone='info']",
+        "priority": "CRITICAL (now FIXED)"
+      },
+      {
+        "component": "AlertsPage",
+        "issue": "After Badge fix the page renders + filter chips (10) + bulk buttons are visible, but [data-testid^='alert-cb-'] returned 0 in automation. Possibly the page renders an empty list under the default filter state, or rows are inside a virtualized table not yet hydrated. Backend GET /admin/alerts returned 12 items in pytest, so data is present. Worth a manual review.",
+        "selector": "[data-testid^='alert-cb-']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Frontend RBAC route guard",
+        "issue": "Backend correctly returns 403 for client_admin on all /admin/compliance/* and /admin/alerts/* endpoints (verified in 13/13 pytest cases). However the Next.js route /admin/compliance/kyc is NOT redirected/blocked client-side for client_admin — they land on the page and see an empty 'No KYC cases' state instead of a clear 'no permission' message. Security is intact (backend rejects), but UX is misleading.",
+        "selector": "ComplianceLayout / middleware",
+        "priority": "LOW (UX, not security)"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase5_compliance.py",
+    "/app/test_reports/pytest/phase5_compliance.xml"
+  ],
+  "action_items": [
+    "Review the Badge `info` tone fix in /app/packages/ui/src/Badge.tsx — testing agent picked #2B6BFF (same as primary). If product wants a distinct cyan/teal for `info` vs blue for `primary`, change the value.",
+    "Investigate /admin/compliance/alerts default render — backend has 12 alerts but [data-testid^='alert-cb-'] returned 0. Likely the default filter (status=open or similar) excludes them, or the table needs an explicit empty-state check.",
+    "Optional: add a client-side RBAC guard / redirect in ComplianceLayout so client_admin doesn't see empty admin pages — currently relies on backend 403s, which produces a degraded UX rather than a clear 'no permission' message."
+  ],
+  "critical_code_review_comments": [
+    "BUG (now FIXED): /app/packages/ui/src/Badge.tsx — TONES map was missing an `info` entry while consumers in kyt/page.tsx, alerts/page.tsx, and risk/page.tsx referenced tone='info'. The Tone type union (`keyof typeof TONES`) should have caught this at compile time, but the SEV_TONE map in those pages was typed as `Record<string, 'info'|'warning'|'danger'>` which casts away the type-check on tone prop. Recommend: import the Tone type from Badge.tsx and use it in SEV_TONE so TypeScript would flag missing palette entries before runtime.",
+    "kyt/page.tsx line 237: `<Badge tone={e.kind === 'wallet' ? 'warning' : 'info'} ...>` — same issue, now unblocked by the Badge fix.",
+    "risk/page.tsx line 22: bucket mapping `medium: 'info'` — same dependency on Badge having an `info` tone.",
+    "compliance/__init__.py is clean (under 25 lines); the 6 sub-routers are properly modularized. No file exceeds the 700-line guideline.",
+    "RBAC enforcement is consistent across all 17 endpoints via `require_compliance` and `require_compliance_decide` dependencies — verified by pytest with client_admin@alemany.capital returning 403 on every endpoint tested."
+  ],
+  "updated_files": [
+    "/app/packages/ui/src/Badge.tsx (added `info` tone)",
+    "/app/backend/tests/test_phase5_compliance.py (new, 41 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (41/41)",
+    "frontend": "90% (5/6 sub-pages fully verified post-fix; alerts page needs follow-up on empty-state default render)"
+  },
+  "test_credentials": "admin@prosper.foundation (super_admin), compliance@prosper.foundation (compliance_officer), client.admin@alemany.capital (client_admin RBAC negative test) — all via GET /api/v1/auth/dev-login.",
+  "seed_data_creation": "None. Verified existing Phase 5 seeds: 5 KYC cases, 3 KYB (Helix/Acme/Sunrise), 7 KYT rules, 25 KYT alerts, 52 risk-scored orgs, 12 platform alerts, 4 watchlist entries, 100 travel-rule transactions.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Compliance routes are mounted under /api/v1/admin/compliance/* and /api/v1/admin/alerts/*. RBAC via require_compliance / require_compliance_decide. KYB checklist enforcement validated: incomplete checklist → 400 'Checklist incomplete', 8/8 → approve succeeds. Wallet screen-wallet stub returns external.status='unavailable' when TRM_LABS_API_KEY is missing (intentional). The Badge component now supports `info` tone — if main agent changes the palette, ensure all 3 consumer pages (kyt, alerts, risk) still look right.",
+  "verified_flows": [
+    "All 13 GET endpoints return 200 for super_admin, 403 for client_admin",
+    "Seed counts: KYC>=5, KYB=3, KYT-rules=7, KYT-alerts=25, risk-clients=52, alerts~12, watchlist=4",
+    "Alerts /summary returns open_count, open_critical_count, latest[<=5]",
+    "PATCH /admin/compliance/kyt/rules/kyt_daily_cap {enabled:false} → 200",
+    "POST /admin/compliance/kyt/screen-wallet with BLACKLIST seed → internal_watchlist_hit=true, external.status='unavailable'",
+    "PATCH /admin/compliance/limits/{org_id} + GET history → both 200, history reflects change",
+    "POST /admin/compliance/kyc/{id}/decision with reason='short' (<20 chars) → 422 (Pydantic min_length=20)",
+    "KYB incomplete checklist → POST decision returns 400 with checklist-incomplete message",
+    "KYB Helix kyb_seed_01: PATCH each remaining checklist item to checked=true, then POST decision approve → 200",
+    "Frontend KYT post-fix: 7 rules, 25 alerts, 100 travel rows, onchain wallet check shows 'unavailable'",
+    "Frontend Limits: 208 caps (52×4), 52 history buttons, click cap → inline input renders",
+    "Frontend AlertsBell: bell visible in topbar, count=3 badge, dropdown shows 5 latest"
+  ],
+  "rca of the issue": "ROOT CAUSE — /app/packages/ui/src/Badge.tsx defined TONES with keys [default, primary, success, warning, danger] but three Phase 5 pages mapped severities/buckets to tone='info' (kyt/page.tsx line 21, alerts/page.tsx line 9, risk/page.tsx line 22). The SEV_TONE Record type used a string-literal union that was wider than `keyof typeof TONES`, so TypeScript didn't flag the mismatch. At runtime `TONES['info']` was undefined → `c.bg` threw TypeError, the Next.js error boundary caught it and the entire KYT/Alerts/Risk page crashed. REPRO: visit /admin/compliance/kyt as super_admin → page renders only the error overlay 'TypeError: Cannot read properties of undefined (reading bg)' from Badge.tsx:38. MITIGATION (applied): added `info: { bg: 'color-mix(in srgb, #2B6BFF 14%, transparent)', fg: '#2B6BFF' }` to the TONES record. Better long-term fix: import the `Tone` type from Badge.tsx into the consumer SEV_TONE maps so TS catches future mismatches at compile time."
+}

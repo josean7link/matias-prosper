@@ -1,8 +1,9 @@
 {
-  "/admin/compliance/page": "app/admin/compliance/page.js",
+  "/login/page": "app/login/page.js",
   "/admin/business/clients/page": "app/admin/business/clients/page.js",
   "/admin/business/revenue/page": "app/admin/business/revenue/page.js",
   "/admin/business/yield/page": "app/admin/business/yield/page.js",
   "/admin/business/cohorts/page": "app/admin/business/cohorts/page.js",
-  "/admin/business/page": "app/admin/business/page.js"
+  "/admin/compliance/kyt/page": "app/admin/compliance/kyt/page.js",
+  "/admin/compliance/alerts/page": "app/admin/compliance/alerts/page.js"
 }

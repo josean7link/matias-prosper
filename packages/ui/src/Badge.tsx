@@ -1,6 +1,7 @@
 const TONES = {
   default: { bg: "rgb(var(--surface-hover))", fg: "rgb(var(--fg-muted))" },
   primary: { bg: "color-mix(in srgb, #2B6BFF 14%, transparent)", fg: "#2B6BFF" },
+  info:    { bg: "color-mix(in srgb, #2B6BFF 14%, transparent)", fg: "#2B6BFF" },
   success: { bg: "color-mix(in srgb, #0FA958 14%, transparent)", fg: "#0FA958" },
   warning: { bg: "color-mix(in srgb, #E07B00 14%, transparent)", fg: "#E07B00" },
   danger:  { bg: "color-mix(in srgb, #DC2626 14%, transparent)", fg: "#DC2626" },

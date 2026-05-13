@@ -29,6 +29,7 @@ from seed import seed_phase1
 from seed_demo import seed_demo_transactions
 from nav_snapshots import backfill_nav_snapshots
 from fees import backfill_fee_breakdown
+from seed_compliance import seed_compliance
 from routes.dashboard import router as dashboard_router
 from routes.onboarding import router as onboarding_router
 from routes.compliance import router as compliance_router
@@ -78,6 +79,8 @@ async def startup():
     logger.info(f"NAV snapshot backfill: {snaps}")
     fees_back = await backfill_fee_breakdown()
     logger.info(f"Fee breakdown backfill: {fees_back}")
+    compl = await seed_compliance()
+    logger.info(f"Compliance seed: {compl}")
 
 
 @app.on_event("shutdown")
