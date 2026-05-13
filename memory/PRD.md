@@ -92,7 +92,23 @@ Backend: paquete `routes/admin_clients/` (7 files) + integraciones/email_sender.
 
 Testing: 26/26 pytest backend · ~95% Playwright. Security invariants confirmados (API key plaintext SOLO en POST, signed JWT single-use). `iteration_10.json`.
 
-## 🟠 Sprint B — blocked on user input
+## ✅ Phase 7 — Portal Cliente · Gate + Dashboard (2026-05-13)
+Backend `routes/client_portal.py`:
+- `GET /v1/client/me` — user + org + feature flags (`can_operate` toggles all client mutations).
+- `GET /v1/client/dashboard` — KPIs (saldo USDC, tokens PUSD, principal, accrued, weighted APR), 12-month yield series, active positions, last 5 transactions, projection (realized YTD + projected annual). Maps Mongo fields `principal_usd / accrued_interest / start / maturity`.
+- `GET /v1/client/transactions?limit=N` — paginated history (scoped por org_id).
+- `POST /v1/apply/context` + `POST /v1/apply/finalize` — token-gated wizard endpoints (JWT signed kyb-link). Finalize is single-use (consumes link, replays return 401), creates KybCase in_review, flips `org.kyb_status` to in_review, opens compliance alert, sends mock email a `compliance@`.
+
+Frontend:
+- `/client/layout.tsx` — wraps with AppShell + sticky `ClientGateBanner`.
+- `ClientGateBanner.tsx` — banner sticky con tono adaptativo (warning pending/needs_info, info in_review, danger rejected/paused). Oculto si `approved && !paused`. CTA "Continuar onboarding" sólo cuando aplica.
+- `/client` dashboard — 4 KPIs, 3 action buttons (Cargar/Invertir/Retirar) **disabled si !can_operate** con label "Disponible al aprobar KYB", `YieldChart` recharts area-chart 12m, projection card, posiciones (hasta 6 rows), últimos movimientos (hasta 5 rows).
+- `/client/profile` — read-only org card (incluye motivo de rechazo si aplica) + user card.
+- `/apply?token=...` — wizard 7 pasos (bienvenida → identidad → empresa → UBOs → docs (placeholder) → verificación (AiPrise note) → revisar + terms). Sin token cae al formulario público legacy que dispara AiPrise.
+
+14/14 pytest backend · `iteration_11.json`. Sumsub queda fuera de scope — KYC/B usa **AiPrise** (mocked en simulated mode hasta tener template IDs).
+
+
 - **TRM Labs**: usuario confirmó cuenta, falta `TRM_LABS_API_KEY` →
   `/admin/compliance/kyt/screen-wallet` y "Check wallet" devuelven
   `status=unavailable` hasta recibir la key.
@@ -108,17 +124,22 @@ Testing: 26/26 pytest backend · ~95% Playwright. Security invariants confirmado
 - Phase 3 ops: guard `retry-step` to only flip steps currently error|pending.
 - Phase 3 ops: disambiguate the many "TEST Holdings" leftover orgs.
 - Phase 4: split `routes/business.py` into clients/revenue/yield/cohorts.
-- Phase 5: SAR/STR currently descargan JSON. Migrar a PDF formal con
-  `@react-pdf/renderer` (similar a Executive PDF de Negocio).
-- Phase 5: client-side RBAC guard en ComplianceLayout — actualmente
-  client_admin ve pantallas vacías (backend rechaza con 403, pero UX engaña).
-- Phase 5: tighten SEV_TONE types — importar `Tone` desde Badge.tsx para que
-  TS detecte mismatch de tonos en compile-time.
-- Phase 5: WebSocket o push real-time para alertas critical (actualmente
-  bell-icon polling 30s).
+- Phase 5: SAR/STR currently descargan JSON. Migrar a PDF formal.
+- Phase 5: client-side RBAC guard en ComplianceLayout.
+- Phase 5: tighten SEV_TONE types — importar `Tone` desde Badge.tsx.
+- Phase 5: WebSocket o push real-time para alertas critical.
+- Phase 6: refactor `/admin/clients/new` y detail forms a shadcn `<Select>` y `<DatePicker>` (currently native HTML).
+- Phase 6: "Crear cliente demo con datos seedeados" button (user-requested follow-up).
+- Phase 7: i18n ES/EN para portal cliente.
+- Phase 7: replace native date inputs en `/apply` (wizard step 2 + legacy form) por shadcn DatePicker.
+- Phase 7: real document upload (vs placeholder checkboxes) en wizard step 5 — engancha con AiPrise upload SDK cuando esté.
 
-## 🟡 Phase 6 — Treasury & Funds (next P1)
-Real subscribe/redeem flows · NAV publication · fee accruals · reconciliation.
+## 🟡 Phase 8 — Portal Cliente · Onramp & Offramp (next P1)
+Cargar dinero (USDC via wire/crypto) y Retirar (off-ramp) — bloqueado por gate
+de KYB. Habilitar acción `/client/deposit` end-to-end.
+
+## 🟡 Phase 9 — Portal Cliente · Invest (P1)
+Comprar Prosper Yield Token (suscripción), gestión de posiciones, redenciones.
 
 ## 🟡 Future (per original PRD)
 - Sumsub Web SDK integration en `/apply` (continuar prompt 1 de Fase 5).
