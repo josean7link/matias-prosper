@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
+INTEGRATION_SETTINGS = "integration_settings"
 # Collection names
 ORGANIZATIONS    = "organizations"
 USERS            = "users"

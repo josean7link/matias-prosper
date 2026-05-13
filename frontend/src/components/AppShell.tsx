@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   Home, Briefcase, ChartBar, ShieldCheck, Users, LayoutDashboard,
-  ArrowDownUp, TrendingUp, Coins, User, Sparkles,
+  ArrowDownUp, TrendingUp, Coins, User, Sparkles, Plug,
   ChevronLeft, ChevronRight, LogOut, Moon, Sun,
 } from "lucide-react";
 import { ProsperLogo } from "./ProsperLogo";
@@ -15,14 +15,16 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useEnvOptional, type Env } from "@/contexts/EnvContext";
 
-type NavItem = { href: string; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement> & { size?: number | string }>; soon?: boolean };
+type NavItem = { href: string; label: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement> & { size?: number | string }>; soon?: boolean; requiredRole?: string };
 
 const ADMIN_NAV: NavItem[] = [
-  { href: "/admin",            label: "Home",        icon: Home },
-  { href: "/admin/operations", label: "Operaciones", icon: Briefcase },
-  { href: "/admin/business",   label: "Negocio",     icon: ChartBar },
-  { href: "/admin/compliance", label: "Compliance",  icon: ShieldCheck },
-  { href: "/admin/clients",    label: "Clientes",    icon: Users, soon: true },
+  { href: "/admin",            label: "Home",          icon: Home },
+  { href: "/admin/operations", label: "Operaciones",   icon: Briefcase },
+  { href: "/admin/business",   label: "Negocio",       icon: ChartBar },
+  { href: "/admin/compliance", label: "Compliance",    icon: ShieldCheck },
+  { href: "/admin/clients",    label: "Clientes",      icon: Users, soon: true },
+  { href: "/admin/settings/integrations",
+                               label: "Integraciones", icon: Plug, requiredRole: "super_admin" },
 ];
 
 const CLIENT_NAV: NavItem[] = [
@@ -48,12 +50,16 @@ export function AppShell({
   const env: Env = envCtx?.env ?? "production";
   const setEnv = envCtx?.setEnv;
   const [email, setEmail] = useState<string>("");
+  const [role,  setRole]  = useState<string>("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
-  const nav = surface === "admin" ? ADMIN_NAV : CLIENT_NAV;
+  const nav = (surface === "admin" ? ADMIN_NAV : CLIENT_NAV)
+    .filter((n) => !n.requiredRole || n.requiredRole === role);
 
   useEffect(() => {
-    api<{ email: string }>("/v1/auth/me").then((d) => setEmail(d.email)).catch(() => {});
+    api<{ user: { email?: string }; role?: string }>("/v1/auth/me")
+      .then((d) => { setEmail(d.user?.email || ""); if (d.role) setRole(d.role); })
+      .catch(() => {});
     setTheme(document.documentElement.classList.contains("dark") ? "dark" : "light");
   }, []);
 

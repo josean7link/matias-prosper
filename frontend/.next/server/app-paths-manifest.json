@@ -1,5 +1,9 @@
 {
   "/login/page": "app/login/page.js",
-  "/access/page": "app/access/page.js",
-  "/admin/page": "app/admin/page.js"
+  "/admin/settings/integrations/page": "app/admin/settings/integrations/page.js",
+  "/admin/operations/funds/page": "app/admin/operations/funds/page.js",
+  "/admin/operations/volume-by-client/page": "app/admin/operations/volume-by-client/page.js",
+  "/admin/business/clients/page": "app/admin/business/clients/page.js",
+  "/admin/business/revenue/page": "app/admin/business/revenue/page.js",
+  "/admin/compliance/kyc/page": "app/admin/compliance/kyc/page.js"
 }
