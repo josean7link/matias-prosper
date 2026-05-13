@@ -120,6 +120,21 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/admin/settings/integrations/page.js"
+    ],
+    "/admin/clients/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/clients/page.js"
+    ],
+    "/admin/clients/[id]/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/clients/[id]/page.js"
+    ],
+    "/admin/clients/new/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/clients/new/page.js"
     ]
   }
 }

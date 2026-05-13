@@ -22,7 +22,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/operations", label: "Operaciones",   icon: Briefcase },
   { href: "/admin/business",   label: "Negocio",       icon: ChartBar },
   { href: "/admin/compliance", label: "Compliance",    icon: ShieldCheck },
-  { href: "/admin/clients",    label: "Clientes",      icon: Users, soon: true },
+  { href: "/admin/clients",    label: "Clientes",      icon: Users },
   { href: "/admin/settings/integrations",
                                label: "Integraciones", icon: Plug, requiredRole: "super_admin" },
 ];

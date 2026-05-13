@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 INTEGRATION_SETTINGS = "integration_settings"
+SIGNED_LINKS         = "signed_links"
+WEBHOOK_DELIVERIES   = "webhook_deliveries"
+OUTBOUND_EMAILS      = "outbound_emails"
 # Collection names
 ORGANIZATIONS    = "organizations"
 USERS            = "users"
