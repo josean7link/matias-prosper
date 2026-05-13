@@ -189,11 +189,14 @@ async def passwordless_token(body: TokenIn, response: Response, request: Request
         org_doc = await col(ORGANIZATIONS).find_one({"allowlist_domains": domain}, {"_id": 0})
         if not org_doc and domain != "prosper.foundation":
             raise HTTPException(403, "Email domain not on any organization allowlist")
-        role = Role.super_admin if domain == "prosper.foundation" else Role.client_user
+        # @prosper.foundation auto-onboarding defaults to plain admin — only
+        # explicitly seeded users (see seed.seed_phase1) hold super_admin. Any
+        # other Prosper team member must be elevated by an existing super_admin
+        # via /admin/users.
+        role = Role.admin if domain == "prosper.foundation" else Role.client_user
         user_doc = {
             "user_id": f"usr_{secrets.token_hex(6)}",
-            "email": email,
-            "role": role.value,
+            "email": email, "role": role.value,
             "org_id": org_doc["org_id"] if org_doc else None,
             "status": "active",
             "kyc_status": "pending", "mfa_enabled": False,
@@ -236,7 +239,9 @@ async def dev_login(email: str, next: str = "/admin"):
         org_doc = await col(ORGANIZATIONS).find_one({"allowlist_domains": domain}, {"_id": 0})
         if not org_doc and domain != "prosper.foundation":
             raise HTTPException(403, "Email domain not on any organization allowlist")
-        role = Role.super_admin if domain == "prosper.foundation" else Role.client_user
+        # @prosper.foundation auto-onboarding defaults to plain admin (same as
+        # the OTP path above) — explicit super_admin seeding only.
+        role = Role.admin if domain == "prosper.foundation" else Role.client_user
         user_doc = {
             "user_id": f"usr_{secrets.token_hex(6)}",
             "email": email, "role": role.value,
