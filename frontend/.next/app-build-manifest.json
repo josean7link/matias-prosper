@@ -16,6 +16,11 @@
       "static/chunks/main-app.js",
       "static/chunks/app/access/page.js"
     ],
+    "/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/page.js"
+    ],
     "/admin/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -26,55 +31,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/admin/layout.js"
     ],
-    "/admin/operations/page": [
+    "/admin/settings/integrations/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/admin/operations/page.js"
+      "static/chunks/app/admin/settings/integrations/page.js"
     ],
-    "/admin/operations/layout": [
+    "/admin/clients/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/admin/operations/layout.js"
-    ],
-    "/admin/operations/transactions/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/operations/transactions/page.js"
-    ],
-    "/admin/operations/funds/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/operations/funds/page.js"
-    ],
-    "/admin/operations/by-client/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/operations/by-client/page.js"
-    ],
-    "/admin/operations/volume-by-client/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/operations/volume-by-client/page.js"
-    ],
-    "/admin/business/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/business/page.js"
-    ],
-    "/admin/business/layout": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/business/layout.js"
-    ],
-    "/admin/business/clients/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/business/clients/page.js"
-    ],
-    "/admin/business/revenue/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/business/revenue/page.js"
+      "static/chunks/app/admin/clients/page.js"
     ],
     "/admin/compliance/page": [
       "static/chunks/webpack.js",
@@ -91,50 +56,20 @@
       "static/chunks/main-app.js",
       "static/chunks/app/admin/compliance/kyc/page.js"
     ],
-    "/admin/compliance/kyb/page": [
+    "/admin/business/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/admin/compliance/kyb/page.js"
+      "static/chunks/app/admin/business/page.js"
     ],
-    "/admin/compliance/kyt/page": [
+    "/admin/business/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/admin/compliance/kyt/page.js"
+      "static/chunks/app/admin/business/layout.js"
     ],
-    "/admin/compliance/risk/page": [
+    "/admin/business/clients/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/admin/compliance/risk/page.js"
-    ],
-    "/admin/compliance/alerts/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/compliance/alerts/page.js"
-    ],
-    "/admin/compliance/limits/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/compliance/limits/page.js"
-    ],
-    "/admin/settings/integrations/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/settings/integrations/page.js"
-    ],
-    "/admin/clients/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/clients/page.js"
-    ],
-    "/admin/clients/[id]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/clients/[id]/page.js"
-    ],
-    "/admin/clients/new/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/clients/new/page.js"
+      "static/chunks/app/admin/business/clients/page.js"
     ]
   }
 }
