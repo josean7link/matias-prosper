@@ -1,9 +1,11 @@
 {
+  "/login/page": "app/login/page.js",
+  "/admin/compliance/page": "app/admin/compliance/page.js",
   "/admin/operations/transactions/page": "app/admin/operations/transactions/page.js",
-  "/admin/operations/by-client/[id]/page": "app/admin/operations/by-client/[id]/page.js",
-  "/admin/operations/transactions/[id]/page": "app/admin/operations/transactions/[id]/page.js",
   "/admin/operations/funds/page": "app/admin/operations/funds/page.js",
   "/admin/operations/volume-by-client/page": "app/admin/operations/volume-by-client/page.js",
-  "/admin/operations/page": "app/admin/operations/page.js",
-  "/admin/operations/by-client/page": "app/admin/operations/by-client/page.js"
+  "/admin/operations/by-client/page": "app/admin/operations/by-client/page.js",
+  "/admin/business/clients/page": "app/admin/business/clients/page.js",
+  "/admin/business/revenue/page": "app/admin/business/revenue/page.js",
+  "/admin/business/yield/page": "app/admin/business/yield/page.js"
 }

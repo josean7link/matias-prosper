@@ -85,6 +85,26 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/admin/operations/by-client/page.js"
+    ],
+    "/admin/business/clients/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/business/clients/page.js"
+    ],
+    "/admin/business/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/business/layout.js"
+    ],
+    "/admin/business/revenue/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/business/revenue/page.js"
+    ],
+    "/admin/business/yield/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/business/yield/page.js"
     ]
   }
 }

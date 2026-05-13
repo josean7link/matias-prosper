@@ -19,7 +19,7 @@ type NavItem = { href: string; label: string; icon: React.ComponentType<React.SV
 const ADMIN_NAV: NavItem[] = [
   { href: "/admin",            label: "Home",        icon: Home },
   { href: "/admin/operations", label: "Operaciones", icon: Briefcase },
-  { href: "/admin/business",   label: "Negocio",     icon: ChartBar, soon: true },
+  { href: "/admin/business",   label: "Negocio",     icon: ChartBar },
   { href: "/admin/compliance", label: "Compliance",  icon: ShieldCheck },
   { href: "/admin/clients",    label: "Clientes",    icon: Users, soon: true },
 ];
