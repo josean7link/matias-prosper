@@ -85,6 +85,15 @@ export default function LoginPage() {
           <p className="text-xs text-fg-subtle mt-8 font-mono uppercase tracking-[0.2em]">
             Encrypted session · 7 day expiry · CNV Regulated
           </p>
+
+          <div className="mt-6 pt-6 border-t border-border">
+            <a href="/access"
+              data-testid="login-demo-link"
+              className="text-xs font-mono uppercase tracking-[0.18em] text-fg-subtle
+                         hover:text-primary inline-flex items-center gap-1.5">
+              <ArrowRight size={12}/> Demo accounts · magic links (preview)
+            </a>
+          </div>
         </div>
       </main>
 

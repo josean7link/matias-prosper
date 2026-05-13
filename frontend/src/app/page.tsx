@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  // Default landing: Admin home. Auth middleware redirects to /login if no session.
-  redirect("/admin");
+  // Demo-friendly: surface the magic-link landing as the default entry point
+  // in preview. Real auth middleware still protects /admin and /client.
+  redirect("/access");
 }
