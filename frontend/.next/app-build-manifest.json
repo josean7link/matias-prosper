@@ -50,6 +50,41 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/admin/operations/page.js"
+    ],
+    "/admin/operations/transactions/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/operations/transactions/page.js"
+    ],
+    "/admin/operations/layout": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/operations/layout.js"
+    ],
+    "/admin/operations/by-client/[id]/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/operations/by-client/[id]/page.js"
+    ],
+    "/admin/operations/transactions/[id]/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/operations/transactions/[id]/page.js"
+    ],
+    "/admin/operations/funds/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/operations/funds/page.js"
+    ],
+    "/admin/operations/volume-by-client/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/operations/volume-by-client/page.js"
+    ],
+    "/admin/operations/by-client/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/operations/by-client/page.js"
     ]
   }
 }

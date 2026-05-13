@@ -18,10 +18,11 @@ export interface DataTableProps<T> {
   rowKey?: (row: T) => string;
   empty?: string;
   className?: string;
+  onRowClick?: (row: T) => void;
 }
 
 export function DataTable<T extends Record<string, unknown>>({
-  data, columns, rowKey, empty = "No data yet", className,
+  data, columns, rowKey, empty = "No data yet", className, onRowClick,
 }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -92,7 +93,11 @@ export function DataTable<T extends Record<string, unknown>>({
             ) : sorted.map((row, idx) => (
               <tr
                 key={rowKey ? rowKey(row) : idx}
-                className="border-b border-border last:border-0 hover:bg-surface-hover transition-colors"
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={[
+                  "border-b border-border last:border-0 hover:bg-surface-hover transition-colors",
+                  onRowClick ? "cursor-pointer" : "",
+                ].join(" ")}
               >
                 {columns.map((c) => {
                   const right = c.numeric || c.align === "right";

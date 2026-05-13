@@ -1,7 +1,9 @@
 {
-  "/login/page": "app/login/page.js",
-  "/login/otp/page": "app/login/otp/page.js",
-  "/apply/page": "app/apply/page.js",
-  "/admin/page": "app/admin/page.js",
-  "/admin/compliance/page": "app/admin/compliance/page.js"
+  "/admin/operations/transactions/page": "app/admin/operations/transactions/page.js",
+  "/admin/operations/by-client/[id]/page": "app/admin/operations/by-client/[id]/page.js",
+  "/admin/operations/transactions/[id]/page": "app/admin/operations/transactions/[id]/page.js",
+  "/admin/operations/funds/page": "app/admin/operations/funds/page.js",
+  "/admin/operations/volume-by-client/page": "app/admin/operations/volume-by-client/page.js",
+  "/admin/operations/page": "app/admin/operations/page.js",
+  "/admin/operations/by-client/page": "app/admin/operations/by-client/page.js"
 }

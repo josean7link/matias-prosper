@@ -31,6 +31,7 @@ from nav_snapshots import backfill_nav_snapshots
 from routes.dashboard import router as dashboard_router
 from routes.onboarding import router as onboarding_router
 from routes.compliance import router as compliance_router
+from routes.operations import router as operations_router
 from routes.webhooks_aiprise import router as aiprise_webhooks_router
 
 logging.basicConfig(level=logging.INFO)
@@ -410,5 +411,6 @@ api.include_router(v1)
 api.include_router(dashboard_router, prefix="/v1")
 api.include_router(onboarding_router, prefix="/v1")
 api.include_router(compliance_router, prefix="/v1")
+api.include_router(operations_router, prefix="/v1")
 api.include_router(aiprise_webhooks_router, prefix="/v1")
 app.include_router(api)
