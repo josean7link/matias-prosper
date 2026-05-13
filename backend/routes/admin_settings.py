@@ -1,21 +1,9 @@
-"""Phase 5+ — Integration settings management.
-
-Provides:
-  - GET    /admin/settings/integrations           — list all providers + status
-  - GET    /admin/settings/integrations/{provider}— full detail (masked secrets)
-  - PATCH  /admin/settings/integrations/{provider}— update fields/docs/mode
-  - POST   /admin/settings/integrations/{provider}/test — exercise the provider
-
-Storage: collection `integration_settings`, 1 doc per provider.
-Lookup precedence: env var (if set) > DB value > None.
-Secrets are returned as `"••••<last4>"` when read; the raw value is only used
-internally by `setting_value(provider, key)`.
-"""
+"""Phase 5+ — Integration settings management."""
 from __future__ import annotations
 
 import os
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List, Dict, Literal
 
 import httpx
@@ -31,6 +19,8 @@ logger = logging.getLogger("prosper.integrations")
 router = APIRouter(prefix="/admin/settings", tags=["admin-settings"])
 
 require_super = requires_role(Role.super_admin)
+require_admin = requires_role(Role.super_admin, Role.admin)
+HEALTH_STALE_MINUTES = 5
 
 
 def _now() -> str:
@@ -289,6 +279,76 @@ async def list_integrations(_: CurrentUser = Depends(require_super)):
     return {"items": items, "total": len(items)}
 
 
+# Health endpoint MUST be registered BEFORE /integrations/{provider} so the
+# path doesn't get captured as a provider name.
+@router.get("/integrations/health")
+async def integrations_health(user: CurrentUser = Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    stale_cutoff = now - timedelta(minutes=HEALTH_STALE_MINUTES)
+    items = []
+    for spec in CATALOG:
+        view = await _provider_view(spec)
+        last_test = view.get("last_test")
+        ran_now = False
+
+        if spec.supports_test and spec.provider in TESTERS:
+            tested_at_str = (last_test or {}).get("tested_at")
+            tested_at: Optional[datetime] = None
+            if tested_at_str:
+                try: tested_at = datetime.fromisoformat(tested_at_str)
+                except Exception: tested_at = None
+            is_stale = (tested_at is None) or (tested_at < stale_cutoff)
+            if is_stale:
+                try:
+                    fn = TESTERS[spec.provider]
+                    result = await fn()
+                    last_test = {**result.model_dump(),
+                                 "tested_at": _now(),
+                                 "tested_by": "system.health"}
+                    await col(INTEGRATION_SETTINGS).update_one(
+                        {"provider": spec.provider},
+                        {"$set": {"last_test": last_test,
+                                  "provider": spec.provider,
+                                  "updated_at": _now()}},
+                        upsert=True)
+                    ran_now = True
+                except Exception as e:
+                    logger.warning(f"Health test {spec.provider} failed: {e}")
+                    last_test = {"ok": False, "message": str(e),
+                                 "tested_at": _now(), "status_code": None,
+                                 "details": None}
+
+        if view["status"] == "missing":
+            health = "missing"
+        elif spec.supports_test:
+            health = "ok" if (last_test and last_test.get("ok")
+                              and view["status"] == "active") else "degraded"
+        else:
+            health = "ok" if view["status"] == "active" else "degraded"
+
+        items.append({
+            "provider":     spec.provider,
+            "name":         spec.name,
+            "category":     spec.category,
+            "status":       view["status"],
+            "mode":         view["mode"],
+            "supports_test": spec.supports_test,
+            "health":       health,
+            "last_test":    last_test,
+            "ran_now":      ran_now,
+            "required_filled": view["required_filled"],
+            "required_total":  view["required_total"],
+        })
+    counts = {
+        "ok":       sum(1 for i in items if i["health"] == "ok"),
+        "degraded": sum(1 for i in items if i["health"] == "degraded"),
+        "missing":  sum(1 for i in items if i["health"] == "missing"),
+    }
+    return {"items": items, "total": len(items), "counts": counts,
+            "generated_at": _now(),
+            "stale_after_minutes": HEALTH_STALE_MINUTES}
+
+
 @router.get("/integrations/{provider}")
 async def get_integration(provider: str, _: CurrentUser = Depends(require_super)):
     spec = CATALOG_BY_PROVIDER.get(provider)
@@ -374,11 +434,19 @@ async def _test_aiprise() -> TestResult:
        or await setting_value("aiprise", "api_key_production")
     if not key:
         return TestResult(ok=False, message="No API key configured")
+    # AiPrise doesn't publish a /healthz so we ping the verifications list with
+    # a tiny page size and treat 200/2xx → ok, 401/403 → auth fail, else fail.
     try:
         async with httpx.AsyncClient(timeout=10) as c:
-            r = await c.get("https://api.aiprise.com/v1/healthz",
+            r = await c.get("https://api.aiprise.com/v1/verifications?limit=1",
                              headers={"Authorization": f"Bearer {key}"})
-            return TestResult(ok=r.status_code < 500,
+            if 200 <= r.status_code < 300:
+                return TestResult(ok=True, message="AiPrise responded OK",
+                                   status_code=r.status_code)
+            if r.status_code in (401, 403):
+                return TestResult(ok=False, message="AiPrise auth failed (key invalid)",
+                                   status_code=r.status_code)
+            return TestResult(ok=False,
                                message=f"AiPrise responded {r.status_code}",
                                status_code=r.status_code)
     except Exception as e:

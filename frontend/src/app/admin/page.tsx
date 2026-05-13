@@ -12,6 +12,7 @@ import { TopClientsTable } from "@/components/dashboard/TopClientsTable";
 import { OpsQueuePanel } from "@/components/dashboard/OpsQueuePanel";
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import ExportPdfButton from "@/components/dashboard/ExportPdfButton";
+import IntegrationsHealthStrip from "@/components/dashboard/IntegrationsHealthStrip";
 
 import {
   useDashboardKpis, useNavHistory, useVolume,
@@ -89,6 +90,8 @@ export default function AdminHomePage() {
           </div>
         }
       />
+
+      <IntegrationsHealthStrip />
 
       {/* KPI row */}
       <section
