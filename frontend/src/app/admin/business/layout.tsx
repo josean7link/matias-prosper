@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users2, DollarSign, TrendingUp } from "lucide-react";
+import { Users2, DollarSign, TrendingUp, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SUBNAV = [
   { href: "/admin/business/clients", label: "Clientes",   icon: Users2     },
   { href: "/admin/business/revenue", label: "Revenue",    icon: DollarSign },
   { href: "/admin/business/yield",   label: "Rendimientos", icon: TrendingUp },
+  { href: "/admin/business/cohorts", label: "Cohortes",   icon: GitBranch  },
 ];
 
 export default function BusinessLayout({ children }: { children: React.ReactNode }) {

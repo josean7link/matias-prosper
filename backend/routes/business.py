@@ -334,6 +334,25 @@ async def yield_by_client(_: CurrentUser = Depends(require_business)):
     total_principal = sum(r["principal"] for r in rows) or 1
     platform_apr_bps = sum(r["weighted_apr_num"] for r in rows) / total_principal
 
+    # Per-client implicit Prosper revenue (last 30d, from fee_breakdown)
+    cutoff_30d = _iso(datetime.now(timezone.utc) - timedelta(days=30))
+    rev_rows = await col(TRANSACTIONS).aggregate([
+        {"$match": {"is_deleted": False, "status": "confirmed",
+                    "org_id": {"$in": org_ids},
+                    "created_at": {"$gte": cutoff_30d}}},
+        {"$group": {
+            "_id": "$org_id",
+            "implicit_mgmt":  {"$sum": {"$ifNull": ["$fee_breakdown.management", 0]}},
+            "implicit_perf":  {"$sum": {"$ifNull": ["$fee_breakdown.performance", 0]}},
+            "implicit_spreads": {"$sum": {"$add": [
+                {"$ifNull": ["$fee_breakdown.onramp_spread", 0]},
+                {"$ifNull": ["$fee_breakdown.offramp_spread", 0]},
+            ]}},
+            "implicit_total": {"$sum": {"$ifNull": ["$prosper_revenue", 0]}},
+        }},
+    ]).to_list(500)
+    rev_map = {r["_id"]: r for r in rev_rows}
+
     items = []
     for r in rows:
         oid = r["_id"]
@@ -342,7 +361,16 @@ async def yield_by_client(_: CurrentUser = Depends(require_business)):
         accrued = r["accrued"] or 0
         # accrued last 30d ~= accrued × 30/180  (sloppy but fine for demo)
         accrued_30d = round(accrued * 30 / 180, 2)
-        # next payout date = earliest maturity
+        rev = rev_map.get(oid, {})
+
+        # Implicit Prosper fees on top of the APR shown to the client:
+        #   gross_fund_apr = (net_apr + mgmt_drag) / (1 - perf_share)
+        # where mgmt_drag = 100 bps (1% annual) and perf_share = 10%.
+        mgmt_drag_bps = 100
+        perf_share    = 0.10
+        gross_apr_bps = (apr_bps + mgmt_drag_bps) / (1 - perf_share) if apr_bps else 0
+        implicit_total_bps = max(0, gross_apr_bps - apr_bps)
+
         items.append({
             "org_id":   oid,
             "name":     orgs.get(oid, {}).get("commercial_name")
@@ -351,6 +379,14 @@ async def yield_by_client(_: CurrentUser = Depends(require_business)):
             "principal_usd": round(principal, 2),
             "apr_bps":      round(apr_bps),
             "apr_pct":      round(apr_bps / 100, 2),
+            "gross_apr_bps": round(gross_apr_bps),
+            "gross_apr_pct": round(gross_apr_bps / 100, 2),
+            "implicit_total_bps": round(implicit_total_bps),
+            "implicit_total_pct": round(implicit_total_bps / 100, 2),
+            "implicit_mgmt_30d_usd":   round(rev.get("implicit_mgmt", 0) or 0, 2),
+            "implicit_perf_30d_usd":   round(rev.get("implicit_perf", 0) or 0, 2),
+            "implicit_spread_30d_usd": round(rev.get("implicit_spreads", 0) or 0, 2),
+            "implicit_total_30d_usd":  round(rev.get("implicit_total", 0) or 0, 2),
             "accrued_30d":  accrued_30d,
             "accrued_total": round(accrued, 2),
             "next_payout_at": r["earliest_maturity"],
@@ -360,3 +396,100 @@ async def yield_by_client(_: CurrentUser = Depends(require_business)):
     return {"items": items, "total": len(items),
             "platform_apr_bps": round(platform_apr_bps),
             "platform_apr_pct": round(platform_apr_bps / 100, 2)}
+
+
+# ---------------------------------------------------------------------------
+# /cohorts — group clients by their first_subscribe month and track retention
+# ---------------------------------------------------------------------------
+@router.get("/cohorts")
+async def cohorts(
+    months: int = Query(12, ge=1, le=36),
+    _: CurrentUser = Depends(require_business),
+):
+    """Returns one row per cohort month (YYYY-MM). For each cohort:
+       - new clients (first_subscribe in that month)
+       - active_now (at least one tx in the last 60d)
+       - churned (no tx in the last 60d)
+       - cumulative volume + revenue brought in by the cohort
+    """
+    now    = datetime.now(timezone.utc)
+    active_cutoff_iso = _iso(now - timedelta(days=60))
+
+    # 1) compute first_subscribe_at per org + activity flags + totals
+    org_rows = await col(TRANSACTIONS).aggregate([
+        {"$match": {"is_deleted": False, "status": "confirmed", "type": "subscribe"}},
+        {"$group": {
+            "_id": "$org_id",
+            "first_subscribe_at": {"$min": "$created_at"},
+            "last_tx_at":         {"$max": "$created_at"},
+            "volume_total":       {"$sum": "$amount"},
+            "revenue_total":      {"$sum": {"$ifNull": ["$prosper_revenue", 0]}},
+        }},
+    ]).to_list(2000)
+
+    # 2) group by cohort month
+    cohorts: dict[str, dict] = {}
+    for o in org_rows:
+        first = o.get("first_subscribe_at") or ""
+        if len(first) < 7:
+            continue
+        month = first[:7]  # YYYY-MM
+        c = cohorts.setdefault(month, {
+            "cohort_month": month,
+            "new_clients":  0,
+            "active_now":   0,
+            "churned":      0,
+            "volume_total": 0.0,
+            "revenue_total": 0.0,
+            "org_ids":       [],
+        })
+        c["new_clients"]  += 1
+        c["volume_total"] += float(o.get("volume_total")  or 0)
+        c["revenue_total"] += float(o.get("revenue_total") or 0)
+        c["org_ids"].append(o["_id"])
+        if (o.get("last_tx_at") or "") >= active_cutoff_iso:
+            c["active_now"] += 1
+        else:
+            c["churned"] += 1
+
+    # 3) filter to last N months and order chronologically
+    y, m = now.year, now.month - months + 1
+    while m <= 0:
+        m += 12; y -= 1
+    start_month = f"{y:04d}-{m:02d}"
+    items = []
+    for k in sorted(cohorts.keys()):
+        if k < start_month:
+            continue
+        c = cohorts[k]
+        retention_pct = round((c["active_now"] / c["new_clients"]) * 100, 1) \
+                         if c["new_clients"] else 0
+        items.append({
+            "cohort_month":   c["cohort_month"],
+            "new_clients":    c["new_clients"],
+            "active_now":     c["active_now"],
+            "churned":        c["churned"],
+            "retention_pct":  retention_pct,
+            "volume_total":   round(c["volume_total"], 2),
+            "revenue_total":  round(c["revenue_total"], 2),
+            "avg_revenue_per_client": round(
+                c["revenue_total"] / c["new_clients"], 2) if c["new_clients"] else 0,
+        })
+
+    total_new      = sum(i["new_clients"]   for i in items)
+    total_active   = sum(i["active_now"]    for i in items)
+    total_churned  = sum(i["churned"]       for i in items)
+    total_volume   = sum(i["volume_total"]  for i in items)
+    total_revenue  = sum(i["revenue_total"] for i in items)
+    return {
+        "items":  items,
+        "total":  len(items),
+        "totals": {
+            "new_clients":  total_new,
+            "active_now":   total_active,
+            "churned":      total_churned,
+            "volume_total": round(total_volume, 2),
+            "revenue_total": round(total_revenue, 2),
+            "retention_pct": round((total_active / total_new) * 100, 1) if total_new else 0,
+        },
+    }

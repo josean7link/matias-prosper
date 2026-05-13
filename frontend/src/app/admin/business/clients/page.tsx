@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader, Badge, DataTable, type Column } from "@prosper/ui";
-import { Download } from "lucide-react";
+import { Download, Columns3, Check } from "lucide-react";
 import { useBizClients, type BizClient } from "@/lib/business";
 import { fmtMoney, cn } from "@/lib/utils";
 import BusinessExecutivePdfButton from "@/components/business/ExecutivePdfButton";
@@ -26,9 +26,56 @@ function Sparkline({ data }: { data: number[] }) {
   );
 }
 
+// Column metadata — `key` MUST match a BizClient field name. Required columns
+// (`name`) can't be toggled off.
+type ColKey = "name" | "type" | "status" | "tier"
+  | "volume_total" | "revenue_total" | "apr_effective_pct" | "yield_30d_pct"
+  | "started_at" | "sparkline";
+
+interface ColMeta { key: ColKey; label: string; required?: boolean; defaultOn: boolean }
+const COL_META: ColMeta[] = [
+  { key: "name",              label: "Client",     required: true, defaultOn: true  },
+  { key: "type",              label: "Type",       defaultOn: true  },
+  { key: "status",            label: "Status",     defaultOn: true  },
+  { key: "tier",              label: "Tier",       defaultOn: true  },
+  { key: "volume_total",      label: "Volume",     defaultOn: true  },
+  { key: "revenue_total",     label: "Revenue",    defaultOn: true  },
+  { key: "apr_effective_pct", label: "APR",        defaultOn: true  },
+  { key: "yield_30d_pct",     label: "Yield 30d",  defaultOn: true  },
+  { key: "started_at",        label: "Started",    defaultOn: true  },
+  { key: "sparkline",         label: "30d vol",    defaultOn: true  },
+];
+const STORAGE_KEY = "prosper.biz.clients.cols.v1";
+
 export default function ClientsPage() {
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const swr = useBizClients({ type: typeFilter.length ? typeFilter : undefined });
+
+  // Persisted visible-columns set
+  const [visible, setVisible] = useState<Set<ColKey>>(() => new Set(
+    COL_META.filter((c) => c.defaultOn).map((c) => c.key)));
+  // Restore from localStorage after mount (avoid SSR/CSR mismatch)
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current) return;
+    restored.current = true;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw) as ColKey[];
+        const next = new Set<ColKey>(arr);
+        COL_META.forEach((c) => { if (c.required) next.add(c.key); });
+        setVisible(next);
+      }
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (!restored.current) return;
+    try {
+      window.localStorage.setItem(STORAGE_KEY,
+        JSON.stringify(Array.from(visible)));
+    } catch { /* ignore */ }
+  }, [visible]);
 
   const TYPES = useMemo(() => {
     const s = new Set<string>();
@@ -36,34 +83,35 @@ export default function ClientsPage() {
     return Array.from(s);
   }, [swr.data]);
 
-  const cols: Column<BizClient>[] = [
-    { key: "name", header: "Client", sortable: true,
+  const allCols: Record<ColKey, Column<BizClient>> = {
+    name: { key: "name", header: "Client", sortable: true,
       render: (r) => (
         <Link href={`/admin/operations/by-client/${r.org_id}`}
               className="text-fg hover:text-primary">{r.name}</Link>) },
-    { key: "type", header: "Type", width: "120px",
+    type: { key: "type", header: "Type", width: "120px",
       render: (r) => <Badge tone="auto" size="sm">{r.type || "—"}</Badge> },
-    { key: "status", header: "Status", width: "100px",
+    status: { key: "status", header: "Status", width: "100px",
       render: (r) => <Badge tone={r.status === "active" ? "success" : "warning"} size="sm">
         {r.status}</Badge> },
-    { key: "tier", header: "Tier", width: "70px",
+    tier: { key: "tier", header: "Tier", width: "70px",
       render: (r) => <span className="font-mono text-[11px]">{r.tier}</span> },
-    { key: "volume_total", header: "Volume total", numeric: true, sortable: true,
+    volume_total: { key: "volume_total", header: "Volume total", numeric: true, sortable: true,
       width: "140px", align: "right",
       render: (r) => <span className="font-mono tabular">{fmtMoney(r.volume_total)}</span> },
-    { key: "revenue_total", header: "Revenue", numeric: true, sortable: true,
+    revenue_total: { key: "revenue_total", header: "Revenue", numeric: true, sortable: true,
       width: "120px", align: "right",
       render: (r) => <span className="font-mono tabular text-success">{fmtMoney(r.revenue_total)}</span> },
-    { key: "apr_effective_pct", header: "APR", numeric: true, width: "70px", align: "right",
+    apr_effective_pct: { key: "apr_effective_pct", header: "APR", numeric: true, width: "70px", align: "right",
       render: (r) => <span className="font-mono tabular">{r.apr_effective_pct}%</span> },
-    { key: "yield_30d_pct", header: "Yield 30d", numeric: true, width: "90px", align: "right",
+    yield_30d_pct: { key: "yield_30d_pct", header: "Yield 30d", numeric: true, width: "90px", align: "right",
       render: (r) => <span className="font-mono tabular text-success">{r.yield_30d_pct}%</span> },
-    { key: "started_at", header: "Started", width: "110px",
+    started_at: { key: "started_at", header: "Started", width: "110px",
       render: (r) => <span className="font-mono text-[10px]">
         {r.started_at ? r.started_at.slice(0, 10) : "—"}</span> },
-    { key: "sparkline", header: "30d vol", width: "90px",
+    sparkline: { key: "sparkline", header: "30d vol", width: "90px",
       render: (r) => <Sparkline data={r.sparkline} /> },
-  ];
+  };
+  const cols = COL_META.filter((c) => visible.has(c.key)).map((c) => allCols[c.key]);
 
   const exportUrl = useMemo(() => {
     const p = new URLSearchParams();
@@ -82,6 +130,7 @@ export default function ClientsPage() {
         subtitle="Volumen, revenue generado para Prosper y rendimiento entregado por organización."
         actions={
           <div className="flex items-center gap-2">
+            <ColumnsDropdown visible={visible} setVisible={setVisible} />
             <a href={exportUrl} target="_blank" rel="noreferrer"
                data-testid="biz-clients-export-csv"
                className="prosper-btn-ghost h-9 text-xs gap-1.5">
@@ -120,6 +169,84 @@ export default function ClientsPage() {
         data={swr.data?.items ?? []} columns={cols}
         rowKey={(r) => r.org_id}
         empty={swr.isLoading ? "Loading…" : "No clients"} />
+    </div>
+  );
+}
+
+function ColumnsDropdown({ visible, setVisible }:
+  { visible: Set<ColKey>; setVisible: (v: Set<ColKey>) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+  const toggle = (k: ColKey) => {
+    const meta = COL_META.find((c) => c.key === k);
+    if (meta?.required) return;
+    const next = new Set(visible);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    setVisible(next);
+  };
+  const reset = () => {
+    setVisible(new Set(COL_META.filter((c) => c.defaultOn).map((c) => c.key)));
+  };
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen((v) => !v)}
+              data-testid="biz-clients-columns-btn"
+              aria-haspopup="true" aria-expanded={open}
+              className="prosper-btn-ghost h-9 text-xs gap-1.5">
+        <Columns3 size={13} /> Columnas
+        <span className="font-mono text-[10px] text-fg-subtle">({visible.size}/{COL_META.length})</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 w-56 z-30 prosper-card p-1.5
+                       shadow-card-hover animate-fade-in"
+             data-testid="biz-clients-columns-menu">
+          <div className="px-2 py-1.5 flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-fg-subtle">
+              Columnas visibles
+            </span>
+            <button onClick={reset}
+                    data-testid="biz-clients-columns-reset"
+                    className="text-[10px] font-mono uppercase tracking-wider
+                               text-fg-subtle hover:text-fg">
+              reset
+            </button>
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {COL_META.map((c) => {
+              const on = visible.has(c.key);
+              return (
+                <button key={c.key}
+                  onClick={() => toggle(c.key)}
+                  data-testid={`biz-clients-col-${c.key}`}
+                  disabled={c.required}
+                  aria-pressed={on}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs",
+                    "hover:bg-surface-hover transition-colors text-left",
+                    c.required && "opacity-60 cursor-not-allowed",
+                  )}>
+                  <span className={cn("w-3.5 h-3.5 rounded-sm border flex items-center justify-center",
+                    on ? "bg-primary border-primary" : "border-border")}>
+                    {on && <Check size={10} className="text-white" />}
+                  </span>
+                  <span className="flex-1">{c.label}</span>
+                  {c.required && (
+                    <span className="text-[9px] font-mono text-fg-subtle uppercase">req</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

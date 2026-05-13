@@ -61,6 +61,10 @@ export function useRevenueByClient(limit = 10) {
 export interface YieldRow {
   org_id: string; name: string; positions: number;
   principal_usd: number; apr_bps: number; apr_pct: number;
+  gross_apr_bps: number; gross_apr_pct: number;
+  implicit_total_bps: number; implicit_total_pct: number;
+  implicit_mgmt_30d_usd: number; implicit_perf_30d_usd: number;
+  implicit_spread_30d_usd: number; implicit_total_30d_usd: number;
   accrued_30d: number; accrued_total: number;
   next_payout_at: string | null; next_payout_usd: number;
   benchmark_delta_bps: number;
@@ -68,6 +72,27 @@ export interface YieldRow {
 export function useYieldByClient() {
   return useSWR<{ items: YieldRow[]; platform_apr_bps: number; platform_apr_pct: number }>(
     "/v1/admin/business/yield/by-client", fetcher);
+}
+
+export interface CohortRow {
+  cohort_month: string;
+  new_clients: number; active_now: number; churned: number;
+  retention_pct: number;
+  volume_total: number; revenue_total: number;
+  avg_revenue_per_client: number;
+}
+export interface CohortsResponse {
+  items: CohortRow[];
+  total: number;
+  totals: {
+    new_clients: number; active_now: number; churned: number;
+    volume_total: number; revenue_total: number;
+    retention_pct: number;
+  };
+}
+export function useCohorts(months = 12) {
+  return useSWR<CohortsResponse>(
+    `/v1/admin/business/cohorts?months=${months}`, fetcher);
 }
 
 export const CONCEPT_COLOR: Record<string, string> = {
