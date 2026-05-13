@@ -78,6 +78,20 @@ faltante en `packages/ui/src/Badge.tsx` (resuelto en mismo run).
 - `@prosper.foundation` auto-provisioned accounts default to **admin**
   (not super_admin). super_admin only via explicit seed.
 
+## ✅ Phase 6 — Clientes / Admin clients CRUD (2026-05-13)
+Full multi-tenant CRUD para organizaciones clientes:
+- `/admin/clients` — listado paginado con filtros (KYB · tipo · env · search), 25 rows/pág, chips de critical_alerts y `kyb_refresh_due`.
+- `/admin/clients/new` — form 3 secciones (corporativa / contacto / interna) con validación inline + domain allowlist. Al guardar: crea Organization, primary User como client_admin, signed invite link 72h, dispara email mock-friendly.
+- `/admin/clients/[id]` — header con 4 acciones (KYB link / Reset pass / Invite link / Pausar) + **9 tabs in-page**: Información, Usuarios, KYB docs + Email log con preview HTML, API keys (plaintext-once con bcrypt hash), Webhooks (HMAC SHA256, test delivery + log), Posiciones, Transacciones, Compliance, Audit log.
+
+Backend: paquete `routes/admin_clients/` (7 files) + integraciones/email_sender.py con 5 templates HTML + JWT signed links (single-use con replay protection).
+
+**Resend mock-friendly**: sin `RESEND_API_KEY` los emails se guardan en `outbound_emails` con `status=preview_only` y HTML descargable.
+
+**Webhooks**: signed con HMAC SHA256, test delivery contra httpbin funciona end-to-end.
+
+Testing: 26/26 pytest backend · ~95% Playwright. Security invariants confirmados (API key plaintext SOLO en POST, signed JWT single-use). `iteration_10.json`.
+
 ## 🟠 Sprint B — blocked on user input
 - **TRM Labs**: usuario confirmó cuenta, falta `TRM_LABS_API_KEY` →
   `/admin/compliance/kyt/screen-wallet` y "Check wallet" devuelven
