@@ -18,8 +18,12 @@ const chivo = Chivo({
 });
 
 export const metadata: Metadata = {
-  title: "Prosper · Tokenized yield on Stellar",
-  description: "Regulated tokenized-yield platform.",
+  title: "prosper · borderless on-chain financial services",
+  description: "Regulated tokenized-yield platform on Stellar.",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/favicon.svg" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

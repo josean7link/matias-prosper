@@ -88,8 +88,8 @@ export default function LoginPage() {
         </div>
       </main>
 
-      <footer className="px-6 py-4 text-xs text-fg-subtle">
-        © Prosper Foundation · Tokenized yield on Stellar
+      <footer className="px-6 py-4 text-xs text-fg-subtle font-mono uppercase tracking-[0.18em]">
+        © prosper · borderless on-chain financial services
       </footer>
     </div>
   );

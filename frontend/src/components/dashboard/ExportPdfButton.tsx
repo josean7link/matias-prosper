@@ -17,38 +17,38 @@ import type {
 // browser environments.
 
 const styles = StyleSheet.create({
-  page: { padding: 28, fontSize: 9, fontFamily: "Helvetica", color: "#0A1F44" },
+  page: { padding: 28, fontSize: 9, fontFamily: "Helvetica", color: "#0B0F19" },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
-            borderBottomWidth: 1, borderBottomColor: "#0A1F44", paddingBottom: 10, marginBottom: 16 },
+            borderBottomWidth: 1, borderBottomColor: "#0B0F19", paddingBottom: 10, marginBottom: 16 },
   brandWrap: { flexDirection: "row", alignItems: "center", gap: 8 },
-  logoBox: { width: 22, height: 22, backgroundColor: "#2B6BFF",
-             alignItems: "center", justifyContent: "center", borderRadius: 4 },
-  logoText: { color: "#FFFFFF", fontSize: 12, fontFamily: "Helvetica-Bold" },
-  brand: { fontSize: 16, fontFamily: "Helvetica-Bold", marginLeft: 8, color: "#0A1F44" },
-  kicker: { fontSize: 7, color: "#5B6478", letterSpacing: 1.2 },
+  logoBox: { width: 24, height: 24, backgroundColor: "#2563FF",
+             alignItems: "center", justifyContent: "center", borderRadius: 5 },
+  logoText: { color: "#FFFFFF", fontSize: 13, fontFamily: "Helvetica-Bold" },
+  brand: { fontSize: 17, fontFamily: "Helvetica-Bold", marginLeft: 6, color: "#0B0F19" },
+  kicker: { fontSize: 7, color: "#6B7280", letterSpacing: 1.2 },
   title: { fontSize: 18, fontFamily: "Helvetica-Bold", marginTop: 2 },
   metaCol: { textAlign: "right" },
-  metaLine: { fontSize: 8, color: "#5B6478", fontFamily: "Courier" },
+  metaLine: { fontSize: 8, color: "#6B7280", fontFamily: "Courier" },
 
   kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 16 },
-  kpiCard: { width: "32%", padding: 8, backgroundColor: "#F5F8FC",
-             borderRadius: 4, borderWidth: 1, borderColor: "#E2E8F0" },
-  kpiLabel: { fontSize: 7, color: "#5B6478", letterSpacing: 1 },
+  kpiCard: { width: "32%", padding: 8, backgroundColor: "#F2F6FF",
+             borderRadius: 4, borderWidth: 1, borderColor: "#E0EAFF" },
+  kpiLabel: { fontSize: 7, color: "#6B7280", letterSpacing: 1 },
   kpiValue: { fontSize: 13, fontFamily: "Helvetica-Bold", marginTop: 3 },
-  kpiHint: { fontSize: 7, color: "#5B6478", marginTop: 2, fontFamily: "Courier" },
+  kpiHint: { fontSize: 7, color: "#6B7280", marginTop: 2, fontFamily: "Courier" },
 
   section: { marginTop: 6, marginBottom: 14 },
-  sectionTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 6, color: "#0A1F44" },
+  sectionTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 6, color: "#0B0F19" },
 
-  tableRow: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#E2E8F0", paddingVertical: 5 },
-  tableHead: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#0A1F44", paddingVertical: 4 },
+  tableRow: { flexDirection: "row", borderBottomWidth: 0.5, borderBottomColor: "#E0EAFF", paddingVertical: 5 },
+  tableHead: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: "#0B0F19", paddingVertical: 4 },
   tCell: { fontSize: 9 },
   tCellMono: { fontSize: 9, fontFamily: "Courier" },
-  tCellHead: { fontSize: 7, color: "#5B6478", letterSpacing: 1 },
+  tCellHead: { fontSize: 7, color: "#6B7280", letterSpacing: 1 },
 
   footer: { position: "absolute", bottom: 18, left: 28, right: 28, flexDirection: "row",
-            justifyContent: "space-between", fontSize: 7, color: "#5B6478",
-            borderTopWidth: 0.5, borderTopColor: "#E2E8F0", paddingTop: 6, fontFamily: "Courier" },
+            justifyContent: "space-between", fontSize: 7, color: "#6B7280",
+            borderTopWidth: 0.5, borderTopColor: "#E0EAFF", paddingTop: 6, fontFamily: "Courier" },
 });
 
 const fmt = (n: number | null | undefined, currency = true) => {
@@ -75,10 +75,10 @@ function DashboardReport({ generatedAt, generatedBy, kpis, navLast, revenue, top
         <View style={styles.header}>
           <View>
             <View style={styles.brandWrap}>
-              <View style={styles.logoBox}><Text style={styles.logoText}>P</Text></View>
-              <Text style={styles.brand}>Prosper</Text>
+              <View style={styles.logoBox}><Text style={styles.logoText}>✦</Text></View>
+              <Text style={styles.brand}>prosper</Text>
             </View>
-            <Text style={[styles.kicker, { marginTop: 6 }]}>Phase 2 · Admin Dashboard</Text>
+            <Text style={[styles.kicker, { marginTop: 6 }]}>BORDERLESS ON-CHAIN FINANCIAL SERVICES</Text>
             <Text style={styles.title}>Daily Operations Snapshot</Text>
           </View>
           <View style={styles.metaCol}>
@@ -134,7 +134,7 @@ function DashboardReport({ generatedAt, generatedBy, kpis, navLast, revenue, top
         </View>
 
         <View style={styles.footer} fixed>
-          <Text>Prosper Foundation · Tokenized yield on Stellar</Text>
+          <Text>prosper · borderless on-chain financial services</Text>
           <Text render={({ pageNumber, totalPages }) => `Page ${pageNumber} / ${totalPages}`} />
         </View>
       </Page>

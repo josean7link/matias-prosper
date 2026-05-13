@@ -8,26 +8,26 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Prosper palette (from fase_00_bootstrap.md)
+        // Prosper official palette
         primary: {
-          DEFAULT: "#2B6BFF",
-          50:  "#EBF1FB",
-          100: "#D6E2F7",
-          200: "#A8C1ED",
-          300: "#7A9FE2",
-          400: "#5285D6",
-          500: "#2B6BFF",
-          600: "#1F55D6",
-          700: "#1841A6",
-          800: "#102D74",
-          900: "#0A1F44",
+          DEFAULT: "#2563FF",
+          50:  "#F2F6FF",
+          100: "#E0EAFF",
+          200: "#C2D6FF",
+          300: "#8DB4FF",
+          400: "#5B8DFF",
+          500: "#2563FF",
+          600: "#1E4FDB",
+          700: "#173EAD",
+          800: "#102C7C",
+          900: "#0B0F19",
         },
-        dark: { DEFAULT: "#0A1F44" },
-        light: { DEFAULT: "#EBF1FB" },
-        grey: { DEFAULT: "#5B6478" },
-        success: { DEFAULT: "#0FA958" },
+        dark:    { DEFAULT: "#0B0F19" },
+        light:   { DEFAULT: "#F2F6FF" },
+        grey:    { DEFAULT: "#6B7280" },
+        success: { DEFAULT: "#22C55E" },
         warning: { DEFAULT: "#E07B00" },
-        danger: { DEFAULT: "#DC2626" },
+        danger:  { DEFAULT: "#DC2626" },
 
         // Surfaces (light + dark mode)
         bg: "rgb(var(--bg) / <alpha-value>)",
@@ -48,8 +48,8 @@ module.exports = {
         lg: "12px",
       },
       boxShadow: {
-        card: "0 2px 8px rgba(10,31,68,0.06)",
-        "card-hover": "0 4px 16px rgba(10,31,68,0.10)",
+        card: "0 2px 8px rgba(11,15,25,0.06)",
+        "card-hover": "0 4px 16px rgba(11,15,25,0.10)",
       },
       keyframes: {
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },

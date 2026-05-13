@@ -6,22 +6,22 @@
   :root {
     /* Light mode — Prosper light surfaces */
     --bg:             255 255 255;  /* #FFFFFF */
-    --surface:        235 241 251;  /* #EBF1FB  light */
-    --surface-hover:  223 232 248;
-    --border:         215 224 240;
-    --fg:             10 31 68;     /* #0A1F44  dark navy */
-    --fg-muted:       91 100 120;   /* #5B6478  grey */
+    --surface:        242 246 255;  /* #F2F6FF  light blue */
+    --surface-hover:  224 234 255;  /* #E0EAFF */
+    --border:         210 222 245;
+    --fg:             11 15 25;     /* #0B0F19  near-black navy */
+    --fg-muted:       107 114 128;  /* #6B7280  grey */
     --fg-subtle:      141 152 175;
   }
 
   .dark {
-    /* Dark mode — Morpho-style deep navy backgrounds */
-    --bg:             10 17 32;     /* near black-navy */
-    --surface:        18 28 48;
-    --surface-hover:  26 38 60;
-    --border:         32 46 72;
-    --fg:             235 241 251;  /* #EBF1FB Prosper light */
-    --fg-muted:       150 165 195;
+    /* Dark mode — Prosper deep #0B0F19 */
+    --bg:             11 15 25;     /* #0B0F19 */
+    --surface:        18 24 40;
+    --surface-hover:  26 34 56;
+    --border:         34 42 66;
+    --fg:             242 246 255;  /* #F2F6FF Prosper light */
+    --fg-muted:       141 165 210;
     --fg-subtle:      110 125 155;
   }
 
@@ -34,7 +34,7 @@
   /* Number-style typography */
   .tabular { font-variant-numeric: tabular-nums; }
   /* Selection */
-  ::selection { background: #2B6BFF40; color: rgb(var(--fg)); }
+  ::selection { background: #2563FF40; color: rgb(var(--fg)); }
 }
 
 @layer components {
