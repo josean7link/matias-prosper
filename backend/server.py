@@ -6,6 +6,7 @@ from typing import Optional
 from pathlib import Path
 
 from fastapi import FastAPI, APIRouter, HTTPException, Response, Request, Depends, Header
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 import httpx
@@ -215,6 +216,49 @@ async def passwordless_token(body: TokenIn, response: Response, request: Request
 async def logout(response: Response):
     response.delete_cookie("prosper_session", path="/")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# DEV magic-link: GET /api/v1/auth/dev-login?email=...&next=/admin
+# Only active when RESEND_API_KEY is empty (preview / sandbox environments).
+# Sets the prosper_session cookie and 302s to `next`. Bypasses all SPA cache.
+# ---------------------------------------------------------------------------
+@v1.get("/auth/dev-login")
+async def dev_login(email: str, next: str = "/admin"):
+    if RESEND_API_KEY:
+        raise HTTPException(404, "Not found")  # disable in production silently
+    email = email.lower().strip()
+
+    user_doc = await col(USERS).find_one({"email": email}, {"_id": 0})
+    if not user_doc:
+        domain = email.rsplit("@", 1)[-1]
+        org_doc = await col(ORGANIZATIONS).find_one({"allowlist_domains": domain}, {"_id": 0})
+        if not org_doc and domain != "prosper.foundation":
+            raise HTTPException(403, "Email domain not on any organization allowlist")
+        role = Role.super_admin if domain == "prosper.foundation" else Role.client_user
+        user_doc = {
+            "user_id": f"usr_{secrets.token_hex(6)}",
+            "email": email, "role": role.value,
+            "org_id": org_doc["org_id"] if org_doc else None,
+            "status": "active", "kyc_status": "pending", "mfa_enabled": False,
+            "is_deleted": False,
+            "created_at": utc_now(), "updated_at": utc_now(),
+        }
+        await col(USERS).insert_one(dict(user_doc))
+
+    await col(USERS).update_one(
+        {"email": email},
+        {"$set": {"last_login_at": utc_now(), "updated_at": utc_now()}})
+
+    role = Role(user_doc["role"])
+    access = make_jwt(user_id=user_doc["user_id"], email=email, role=role,
+                      org_id=user_doc.get("org_id"))
+    # Sanitize the `next` param so this can't be used as an open redirect
+    safe_next = next if next.startswith("/") else "/admin"
+    resp = RedirectResponse(url=safe_next, status_code=303)
+    resp.set_cookie("prosper_session", access, httponly=True, secure=COOKIE_SECURE,
+                    samesite="lax", path="/", max_age=7*24*3600)
+    return resp
 
 
 # ---------------------------------------------------------------------------
