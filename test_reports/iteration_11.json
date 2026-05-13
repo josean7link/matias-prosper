@@ -1,0 +1,44 @@
+{
+  "summary": "FASE 7 — Portal Cliente (Gate + Dashboard + Profile + /apply wizard) tested end-to-end. Backend: 14/14 pytest pass covering /client/me, /client/dashboard (12-month yield series, field mapping principal/accrued/start_date/maturity_date, KPIs, projection), /apply/context (valid & invalid token), /apply/finalize (consume single-use → 401 on reuse, accept_terms required, alert + outbound email created, org.kyb_status flipped to in_review). Auth required (401 without cookie) confirmed on /client/* endpoints. Tenant isolation verified by comparing alemany vs finpact dashboards. Frontend: client.admin@alemany.capital (approved) → no banner, action buttons as <A> links with no data-disabled, KPIs populated ($540k principal / 8 active positions in seed, table slices to 6 rendered + 'Ver todas' link, ~$430k tokens, APR 8.50%), yield-card + projection-card render, recent transactions list shows confirmed items. client.admin@finpact.io → ClientGateBanner present with data-status='in_review' (banner-tone info; flipped from 'pending' during earlier finalize test — banner contract intact), all 3 action buttons rendered as DIVs with data-disabled='true' and aria-disabled='true' with subtitle 'Disponible al aprobar KYB'. /client/profile shows org card (legal_name, org_id=org_seed_alemany, country AR, tier T2, env sandbox, KYB badge=APPROVED) and user card (email, role=client_admin, user_id=usr_seed_alemany_admin). /apply (no token) shows legacy form with data-testid='apply-form'. /apply?token=<valid> shows full 7-step wizard with data-testid='apply-wizard', 'apply-stepper', step-1..step-7, apply-back (disabled on step 1) and apply-next; pre-filled context populates the wizard; step 1→2 navigation works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/apply wizard (step 2 — Tu identidad) and legacy /apply form",
+        "issues": [
+          "FECHA NAC. and INCORPORATION DATE use native browser date picker (mm/dd/yyyy). Same finding as iteration_10 — replace with shadcn DatePicker for consistency."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase7_client_portal.py",
+    "/app/test_reports/pytest/phase7_client_portal.xml"
+  ],
+  "action_items": [
+    "(Optional polish) Replace native HTML date inputs in /apply (legacy + wizard step 2) with the shadcn DatePicker component used elsewhere in the design system.",
+    "(Informational) finpact org.kyb_status is now 'in_review' (flipped from 'pending' after the /apply/finalize test). If next iteration needs a 'pending' state for visual QA, re-seed via `python -m backend.seed.seed_phase1` or manually reset that org's kyb_status."
+  ],
+  "critical_code_review_comments": [
+    "Backend correctly maps Mongo position fields (principal_usd → principal, accrued_interest → accrued, start → start_date, maturity → maturity_date) — review_request expectation satisfied.",
+    "/apply/finalize is single-use: SIGNED_LINKS row is marked status='used' atomically via filtered update; second call returns 401 'Link already used or expired'. Replay protection verified.",
+    "Conditional kyb_status flip only triggers when current status is in {None, pending, needs_info} — won't reset 'approved' or 'rejected' clients, good defensive logic.",
+    "Email integration uses preview_only (RESEND_API_KEY empty in .env) — confirmed MOCKED. compliance@prosper.foundation email is queued correctly with template='kyb_submitted'.",
+    "Frontend ActionBtn cleanly distinguishes enabled (renders <Link>) vs disabled (renders <div data-disabled='true' aria-disabled='true'>) with 'Disponible al aprobar KYB' subtitle when locked. Good a11y.",
+    "client_portal.py is 309 lines, well under the 700-line threshold; logically split: protected /client/* router + public /apply/* router in the same module which is acceptable for the size."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase7_client_portal.py (new)"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (functional) / minor design polish only"},
+  "test_credentials": "admin@prosper.foundation, client.admin@alemany.capital (approved), client.admin@finpact.io (was pending, now in_review after finalize). All via /api/v1/auth/dev-login.",
+  "seed_data_creation": "Phase 7 test_finalize ran twice and used 2 fresh KYB signed-links generated against org_seed_finpact. Side effects: 1 kyb_apply_finpact case in_review, 1 alert (al_kyb_finpact), 2+ outbound emails queued (preview_only). Side effect on org_seed_finpact.kyb_status: pending → in_review.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "mocked_integrations_confirmed": [
+    "Resend → preview_only outbound emails (RESEND_API_KEY empty). Verified via /admin/clients/org_seed_finpact/emails endpoint.",
+    "AiPrise simulated mode (no template IDs in .env)",
+    "TRM Labs stubbed (not exercised in this phase)"
+  ],
+  "context_for_next_testing_agent": "Phase 7 backend + frontend are stable. Suite at /app/backend/tests/test_phase7_client_portal.py runs in ~5s. Note: each `test_finalize_*` call consumes a fresh KYB link, so re-running the suite generates new alerts and emails (cumulative side-effects on org_seed_finpact). If a new test needs the 'pending' banner state, target a different org (e.g. create a fresh org via super_admin POST /admin/clients) instead of finpact. ClientGateBanner data-status values seen: 'pending'|'in_review'|'needs_info'|'rejected'. Test selectors used: [data-testid='client-gate-banner'][data-status='...'], [data-testid='action-deposit'|'action-invest'|'action-withdraw'][data-disabled='true'], [data-testid='apply-wizard'], [data-testid='apply-form'], [data-testid='apply-stepper'], step-1..step-7, apply-back, apply-next."
+}

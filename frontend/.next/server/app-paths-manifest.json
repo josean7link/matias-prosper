@@ -1,12 +1,9 @@
 {
   "/login/page": "app/login/page.js",
-  "/access/page": "app/access/page.js",
-  "/page": "app/page.js",
+  "/apply/page": "app/apply/page.js",
+  "/client/page": "app/client/page.js",
+  "/client/profile/page": "app/client/profile/page.js",
   "/admin/page": "app/admin/page.js",
-  "/admin/settings/integrations/page": "app/admin/settings/integrations/page.js",
-  "/admin/clients/page": "app/admin/clients/page.js",
-  "/admin/compliance/page": "app/admin/compliance/page.js",
-  "/admin/compliance/kyc/page": "app/admin/compliance/kyc/page.js",
   "/admin/business/page": "app/admin/business/page.js",
   "/admin/business/clients/page": "app/admin/business/clients/page.js"
 }

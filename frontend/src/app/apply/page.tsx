@@ -1,229 +1,575 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ArrowRight, Building2, ChevronLeft, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft, ArrowRight, Building2, CheckCircle2, FileUp,
+  ShieldCheck, User as UserIcon, Users as UsersIcon, ClipboardCheck,
+} from "lucide-react";
 import { ProsperLogo } from "@/components/ProsperLogo";
 import { api } from "@/lib/api";
+import type { ApplyContext, ApplyPayload, UBOInput } from "@/lib/client-portal";
+import { LegacyApplyForm } from "./LegacyApplyForm";
 
-interface UBO { full_name: string; ownership_pct: number; role?: string }
-interface FormState {
-  legal_name: string; commercial_name: string;
-  country: string; jurisdiction: string;
-  incorporation_date: string; registration_number: string;
-  contact_name: string; contact_email: string; contact_phone: string;
-  website: string;
-  expected_monthly_volume_usd: string;
-  use_case: string;
-  ubos: UBO[];
+const STEPS = [
+  { id: 1, label: "Bienvenida",    icon: <Building2 size={14} /> },
+  { id: 2, label: "Tu identidad",  icon: <UserIcon size={14} /> },
+  { id: 3, label: "Empresa",       icon: <Building2 size={14} /> },
+  { id: 4, label: "UBOs",          icon: <UsersIcon size={14} /> },
+  { id: 5, label: "Documentos",    icon: <FileUp size={14} /> },
+  { id: 6, label: "Verificación",  icon: <ShieldCheck size={14} /> },
+  { id: 7, label: "Revisar",       icon: <ClipboardCheck size={14} /> },
+];
+
+interface PersonalData {
+  first_name: string; last_name: string;
+  dob: string; gender: string;
+  nationality: string; doc_id: string;
 }
 
-const initial: FormState = {
-  legal_name: "", commercial_name: "",
-  country: "", jurisdiction: "",
-  incorporation_date: "", registration_number: "",
-  contact_name: "", contact_email: "", contact_phone: "",
-  website: "",
-  expected_monthly_volume_usd: "",
-  use_case: "",
-  ubos: [{ full_name: "", ownership_pct: 0, role: "" }],
-};
+const DOC_KINDS = [
+  { key: "certificate",      label: "Certificado de constitución" },
+  { key: "board_resolution", label: "Board resolution / Acta" },
+  { key: "address_proof",    label: "Proof of address (<3 meses)" },
+  { key: "tax_id",           label: "Constancia fiscal / Tax ID" },
+  { key: "financials",       label: "Estados financieros" },
+];
 
 export default function ApplyPage() {
+  const params = useSearchParams();
   const router = useRouter();
-  const [form, setForm] = useState<FormState>(initial);
+  const token = params.get("token");
+
+  const [ctx, setCtx] = useState<ApplyContext | null>(null);
+  const [ctxError, setCtxError] = useState<string | null>(null);
+  const [loadingCtx, setLoadingCtx] = useState(true);
+  const [step, setStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
 
-  const setField = (k: keyof FormState, v: string) =>
-    setForm((f) => ({ ...f, [k]: v }));
-  const setUbo = (i: number, k: keyof UBO, v: string | number) =>
-    setForm((f) => ({
-      ...f,
-      ubos: f.ubos.map((u, idx) => idx === i ? { ...u, [k]: v } : u),
-    }));
-  const addUbo = () =>
-    setForm((f) => ({ ...f, ubos: [...f.ubos, { full_name: "", ownership_pct: 0 }] }));
-  const removeUbo = (i: number) =>
-    setForm((f) => ({ ...f, ubos: f.ubos.filter((_, idx) => idx !== i) }));
+  const [personal, setPersonal] = useState<PersonalData>({
+    first_name: "", last_name: "", dob: "", gender: "",
+    nationality: "", doc_id: "",
+  });
+  const [corpLegalName, setCorpLegalName] = useState("");
+  const [ubos, setUbos] = useState<UBOInput[]>([
+    { full_name: "", ownership_pct: 0, nationality: "", is_pep: false },
+  ]);
+  const [docs, setDocs] = useState<Record<string, boolean>>({});
+  const [accept, setAccept] = useState(false);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (!token) { setLoadingCtx(false); return; }
+    api<ApplyContext>("/v1/apply/context", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    })
+      .then((c) => { setCtx(c); setCorpLegalName(c.legal_name || ""); })
+      .catch((e: Error) => setCtxError(e.message))
+      .finally(() => setLoadingCtx(false));
+  }, [token]);
+
+  // Legacy public flow (no token) — keep AiPrise integration as-is.
+  if (!token) return <LegacyApplyForm />;
+
+  if (loadingCtx) {
+    return <CenterShell><p className="text-fg-subtle text-sm">Validando link…</p></CenterShell>;
+  }
+  if (ctxError || !ctx) {
+    return (
+      <CenterShell>
+        <div className="prosper-card p-7 text-center max-w-md" data-testid="apply-error">
+          <h1 className="font-display font-bold text-lg text-fg">Link inválido o expirado</h1>
+          <p className="text-sm text-fg-muted mt-2">
+            {ctxError || "Pedí un nuevo link a tu contacto en Prosper."}
+          </p>
+          <Link href="/" className="prosper-btn-primary mt-5 inline-flex h-10 px-4 text-sm">
+            Volver al inicio
+          </Link>
+        </div>
+      </CenterShell>
+    );
+  }
+
+  const canNext = (): boolean => {
+    if (step === 2) {
+      return !!(personal.first_name && personal.last_name && personal.dob &&
+                personal.nationality && personal.doc_id);
+    }
+    if (step === 3) return !!corpLegalName;
+    if (step === 4) {
+      const filled = ubos.filter((u) => u.full_name.trim().length > 0);
+      if (filled.length === 0) return false;
+      const total = filled.reduce((s, u) => s + Number(u.ownership_pct || 0), 0);
+      return total > 0 && total <= 100;
+    }
+    if (step === 5) {
+      return DOC_KINDS.filter((d) => ["certificate", "board_resolution", "tax_id"].includes(d.key))
+                     .every((d) => docs[d.key]);
+    }
+    if (step === 7) return accept;
+    return true;
+  };
+
+  const submit = async () => {
     setSubmitting(true);
     try {
-      const body = {
-        ...form,
-        expected_monthly_volume_usd: form.expected_monthly_volume_usd
-          ? Number(form.expected_monthly_volume_usd) : null,
-        ubos: form.ubos.filter((u) => u.full_name.trim().length > 0)
-          .map((u) => ({ ...u, ownership_pct: Number(u.ownership_pct) })),
+      const payload: ApplyPayload = {
+        token,
+        personal,
+        corporate: { legal_name: corpLegalName },
+        ubos: ubos.filter((u) => u.full_name.trim().length > 0)
+                  .map((u) => ({ ...u, ownership_pct: Number(u.ownership_pct) })),
+        documents: Object.entries(docs)
+          .filter(([, v]) => v)
+          .map(([k]) => {
+            const meta = DOC_KINDS.find((d) => d.key === k);
+            return { label: meta?.label || k, kind: k, url: `placeholder://${k}` };
+          }),
+        accept_terms: accept,
       };
-      const res = await api<{ application_id: string; hosted_url: string; mode: string }>(
-        "/v1/onboarding/apply", { method: "POST", body: JSON.stringify(body) },
+      const res = await api<{ ok: boolean; case_id: string }>(
+        "/v1/apply/finalize",
+        { method: "POST", body: JSON.stringify(payload) }
       );
-      toast.success("Application received — redirecting to identity verification");
-      // hosted_url is either an external AiPrise URL (live) or our /apply/simulate (sim)
-      if (res.hosted_url.startsWith("http")) {
-        window.location.href = res.hosted_url;
-      } else {
-        router.push(res.hosted_url);
-      }
-    } catch (err: any) {
-      toast.error(err?.message || "Submission failed");
+      toast.success("Onboarding enviado. Compliance fue notificado.");
+      router.push(`/apply/status?app_id=${res.case_id}`);
+    } catch (err) {
+      const e = err as Error;
+      toast.error(e.message || "Error al enviar");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-bg" data-testid="apply-page">
+    <div className="min-h-screen bg-bg" data-testid="apply-wizard">
       <header className="border-b border-border bg-surface">
-        <div className="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <ProsperLogo />
-          </Link>
-          <Link href="/login"
-            className="text-xs font-mono uppercase tracking-wider text-fg-subtle hover:text-fg">
-            Already a client? Sign in →
-          </Link>
+        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+          <ProsperLogo />
+          <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle">
+            KYB onboarding · {ctx.commercial_name || ctx.legal_name}
+          </div>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-12">
-        <div className="mb-8">
-          <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle mb-1">
-            Phase 3 · Onboarding
-          </div>
-          <h1 className="font-display font-bold text-3xl text-fg tracking-tight">
-            Apply to onboard your organization
-          </h1>
-          <p className="text-sm text-fg-muted mt-2 max-w-xl">
-            Tell us about your business. We'll start the KYB verification with our
-            licensed partner immediately after submission — typically takes 5
-            minutes for the document portion.
-          </p>
+      <main className="max-w-5xl mx-auto px-6 py-10">
+        {/* Stepper */}
+        <ol className="hidden md:flex items-center gap-2 mb-8" data-testid="apply-stepper">
+          {STEPS.map((s, i) => {
+            const done = step > s.id;
+            const active = step === s.id;
+            return (
+              <li key={s.id} className="flex items-center gap-2 flex-1 last:flex-none">
+                <div
+                  className={`h-7 w-7 rounded-full flex items-center justify-center text-[11px] font-mono font-bold border
+                              ${done ? "bg-success text-white border-success"
+                                : active ? "bg-primary text-white border-primary"
+                                : "bg-bg text-fg-subtle border-border"}`}
+                  data-testid={`step-${s.id}`}
+                  data-active={active}
+                  data-done={done}
+                >
+                  {done ? <CheckCircle2 size={12} /> : s.id}
+                </div>
+                <div className={`text-[11px] uppercase tracking-wider font-mono whitespace-nowrap
+                                ${active ? "text-fg font-bold" : "text-fg-subtle"}`}>
+                  {s.label}
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div className={`flex-1 h-px ${done ? "bg-success" : "bg-border"}`} />
+                )}
+              </li>
+            );
+          })}
+        </ol>
+
+        <div className="prosper-card p-7">
+          {step === 1 && <StepWelcome ctx={ctx} />}
+          {step === 2 && <StepPersonal data={personal} onChange={setPersonal} />}
+          {step === 3 && (
+            <StepCorporate ctx={ctx} legalName={corpLegalName} setLegalName={setCorpLegalName} />
+          )}
+          {step === 4 && <StepUbos ubos={ubos} setUbos={setUbos} />}
+          {step === 5 && <StepDocuments docs={docs} setDocs={setDocs} />}
+          {step === 6 && <StepVerification ctx={ctx} />}
+          {step === 7 && (
+            <StepReview
+              ctx={ctx}
+              personal={personal}
+              corpLegalName={corpLegalName}
+              ubos={ubos}
+              docs={docs}
+              accept={accept}
+              setAccept={setAccept}
+            />
+          )}
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-8" data-testid="apply-form">
-          <Section title="Company" icon={<Building2 size={14} />}>
-            <Field label="Legal name *" value={form.legal_name}
-              onChange={(v) => setField("legal_name", v)} testid="legal-name" required />
-            <Field label="Commercial name" value={form.commercial_name}
-              onChange={(v) => setField("commercial_name", v)} testid="commercial-name" />
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Country *" value={form.country} placeholder="AR"
-                onChange={(v) => setField("country", v)} testid="country" required />
-              <Field label="Jurisdiction *" value={form.jurisdiction}
-                placeholder="Buenos Aires"
-                onChange={(v) => setField("jurisdiction", v)} testid="jurisdiction" required />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Incorporation date" type="date"
-                value={form.incorporation_date}
-                onChange={(v) => setField("incorporation_date", v)} testid="incorp-date" />
-              <Field label="Registration number" value={form.registration_number}
-                onChange={(v) => setField("registration_number", v)} testid="reg-number" />
-            </div>
-            <Field label="Website" type="url" value={form.website}
-              placeholder="https://"
-              onChange={(v) => setField("website", v)} testid="website" />
-          </Section>
+        {/* Footer nav */}
+        <div className="mt-6 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setStep((s) => Math.max(1, s - 1))}
+            disabled={step === 1}
+            className="prosper-btn-ghost h-11 px-4 text-sm gap-2 disabled:opacity-30"
+            data-testid="apply-back"
+          >
+            <ArrowLeft size={14} /> Atrás
+          </button>
 
-          <Section title="Primary contact" icon={<ShieldCheck size={14} />}>
-            <Field label="Full name *" value={form.contact_name}
-              onChange={(v) => setField("contact_name", v)} testid="contact-name" required />
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Work email *" type="email" value={form.contact_email}
-                onChange={(v) => setField("contact_email", v)}
-                testid="contact-email" required />
-              <Field label="Phone" value={form.contact_phone} placeholder="+54 11 ..."
-                onChange={(v) => setField("contact_phone", v)} testid="contact-phone" />
-            </div>
-          </Section>
-
-          <Section title="Ultimate Beneficial Owners (UBOs)">
-            <div className="space-y-3">
-              {form.ubos.map((u, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-end"
-                     data-testid={`ubo-row-${i}`}>
-                  <div className="col-span-5">
-                    <Field label={i === 0 ? "Full name" : ""} value={u.full_name}
-                      onChange={(v) => setUbo(i, "full_name", v)}
-                      testid={`ubo-${i}-name`} />
-                  </div>
-                  <div className="col-span-3">
-                    <Field label={i === 0 ? "Ownership %" : ""} type="number"
-                      value={String(u.ownership_pct)}
-                      onChange={(v) => setUbo(i, "ownership_pct", v)}
-                      testid={`ubo-${i}-pct`} />
-                  </div>
-                  <div className="col-span-3">
-                    <Field label={i === 0 ? "Role" : ""} value={u.role || ""}
-                      onChange={(v) => setUbo(i, "role", v)}
-                      testid={`ubo-${i}-role`} placeholder="CEO" />
-                  </div>
-                  <div className="col-span-1">
-                    {form.ubos.length > 1 && (
-                      <button type="button" onClick={() => removeUbo(i)}
-                        className="h-10 w-full text-xs text-danger hover:bg-danger/10 rounded"
-                        data-testid={`ubo-${i}-remove`}>×</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              <button type="button" onClick={addUbo}
-                className="text-xs font-mono uppercase tracking-wider text-primary hover:underline"
-                data-testid="ubo-add">+ Add UBO</button>
-            </div>
-          </Section>
-
-          <Section title="Use case">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Expected monthly volume (USD)" type="number"
-                value={form.expected_monthly_volume_usd}
-                onChange={(v) => setField("expected_monthly_volume_usd", v)}
-                testid="volume" placeholder="250000" />
-              <Field label="Primary use case" value={form.use_case}
-                onChange={(v) => setField("use_case", v)}
-                testid="use-case" placeholder="Treasury yield, payments..." />
-            </div>
-          </Section>
-
-          <div className="flex items-center justify-between border-t border-border pt-6">
-            <Link href="/" className="text-xs font-mono uppercase tracking-wider
-                                       text-fg-subtle hover:text-fg flex items-center gap-1">
-              <ChevronLeft size={12} /> Back
-            </Link>
-            <button type="submit" disabled={submitting}
-              className="prosper-btn-primary h-11 px-6 text-sm gap-2"
-              data-testid="apply-submit">
-              {submitting ? "Submitting…" : (
-                <>Submit & start KYB <ArrowRight size={14} /></>
-              )}
+          {step < STEPS.length ? (
+            <button
+              type="button"
+              onClick={() => canNext() && setStep((s) => s + 1)}
+              disabled={!canNext()}
+              className="prosper-btn-primary h-11 px-6 text-sm gap-2 disabled:opacity-40"
+              data-testid="apply-next"
+            >
+              Siguiente <ArrowRight size={14} />
             </button>
-          </div>
-        </form>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canNext() || submitting}
+              className="prosper-btn-primary h-11 px-6 text-sm gap-2 disabled:opacity-40"
+              data-testid="apply-submit"
+            >
+              {submitting ? "Enviando…" : (<>Enviar para revisión <CheckCircle2 size={14} /></>)}
+            </button>
+          )}
+        </div>
       </main>
     </div>
   );
 }
 
-function Section({ title, icon, children }:
-  { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+/* ---------------- Steps ---------------- */
+
+function StepWelcome({ ctx }: { ctx: ApplyContext }) {
   return (
-    <section>
-      <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle mb-2
-                       flex items-center gap-1.5">
-        {icon} {title}
+    <div data-testid="step-content-1">
+      <Kicker>Paso 1 / 7 · Bienvenida</Kicker>
+      <Title>Hola {ctx.primary_name?.split(" ")[0] || ctx.commercial_name}</Title>
+      <p className="text-sm text-fg-muted max-w-xl">
+        Vamos a completar el KYB de <strong>{ctx.commercial_name || ctx.legal_name}</strong>.
+        Te tomará 5–10 minutos. Podés guardar y volver con el mismo link.
+      </p>
+      <div className="mt-5 grid grid-cols-2 gap-4 text-sm">
+        <Pre label="Razón social"  value={ctx.legal_name} />
+        <Pre label="País"          value={ctx.country} />
+        <Pre label="Tax ID"        value={ctx.tax_id} />
+        <Pre label="Tipo"          value={ctx.type} />
       </div>
-      <div className="space-y-3 prosper-card p-5">{children}</div>
-    </section>
+    </div>
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = "text", required, testid }:
+function StepPersonal({ data, onChange }:
+  { data: PersonalData; onChange: (d: PersonalData) => void }) {
+  const set = (k: keyof PersonalData, v: string) => onChange({ ...data, [k]: v });
+  return (
+    <div data-testid="step-content-2">
+      <Kicker>Paso 2 / 7 · Tu identidad</Kicker>
+      <Title>¿Quién está completando este onboarding?</Title>
+      <p className="text-sm text-fg-muted mb-5">
+        Necesitamos verificar la identidad de la persona responsable de la cuenta.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <FormField label="Nombre *"     value={data.first_name} onChange={(v) => set("first_name", v)} testid="first-name" />
+        <FormField label="Apellido *"   value={data.last_name}  onChange={(v) => set("last_name", v)} testid="last-name" />
+        <FormField label="Fecha nac. *" type="date" value={data.dob} onChange={(v) => set("dob", v)} testid="dob" />
+        <FormField label="Género"        value={data.gender} onChange={(v) => set("gender", v)}
+                   placeholder="M / F / Otro" testid="gender" />
+        <FormField label="Nacionalidad *" value={data.nationality} onChange={(v) => set("nationality", v)}
+                   placeholder="AR" testid="nationality" />
+        <FormField label="DNI / Pasaporte *" value={data.doc_id} onChange={(v) => set("doc_id", v)} testid="doc-id" />
+      </div>
+    </div>
+  );
+}
+
+function StepCorporate({ ctx, legalName, setLegalName }:
+  { ctx: ApplyContext; legalName: string; setLegalName: (v: string) => void }) {
+  return (
+    <div data-testid="step-content-3">
+      <Kicker>Paso 3 / 7 · Empresa</Kicker>
+      <Title>Confirmá los datos corporativos</Title>
+      <p className="text-sm text-fg-muted mb-5">
+        Ya tenemos lo principal del registro. Confirmá la razón social tal como
+        figura en el certificado de constitución.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <FormField label="Razón social *" value={legalName} onChange={setLegalName} testid="legal-name" />
+        <Pre label="Nombre comercial" value={ctx.commercial_name} />
+        <Pre label="País"             value={ctx.country} />
+        <Pre label="Tax ID"           value={ctx.tax_id} />
+      </div>
+    </div>
+  );
+}
+
+function StepUbos({ ubos, setUbos }:
+  { ubos: UBOInput[]; setUbos: (u: UBOInput[]) => void }) {
+  const total = ubos.reduce((s, u) => s + Number(u.ownership_pct || 0), 0);
+  return (
+    <div data-testid="step-content-4">
+      <Kicker>Paso 4 / 7 · UBOs</Kicker>
+      <Title>Beneficiarios finales (UBOs)</Title>
+      <p className="text-sm text-fg-muted mb-5">
+        Cargá a todas las personas físicas con &gt;25% de la empresa, o que ejerzan
+        control. El total no puede superar 100%.
+      </p>
+
+      <div className="space-y-3">
+        {ubos.map((u, i) => (
+          <div key={i} className="grid grid-cols-12 gap-2 items-end" data-testid={`ubo-row-${i}`}>
+            <div className="col-span-4">
+              <FormField label={i === 0 ? "Nombre completo *" : ""} value={u.full_name}
+                onChange={(v) => setUbos(ubos.map((x, idx) => idx === i ? { ...x, full_name: v } : x))}
+                testid={`ubo-${i}-name`} />
+            </div>
+            <div className="col-span-2">
+              <FormField label={i === 0 ? "% participación *" : ""} type="number"
+                value={String(u.ownership_pct)}
+                onChange={(v) => setUbos(ubos.map((x, idx) => idx === i ? { ...x, ownership_pct: Number(v) } : x))}
+                testid={`ubo-${i}-pct`} />
+            </div>
+            <div className="col-span-3">
+              <FormField label={i === 0 ? "Nacionalidad" : ""} value={u.nationality || ""}
+                placeholder="AR"
+                onChange={(v) => setUbos(ubos.map((x, idx) => idx === i ? { ...x, nationality: v } : x))}
+                testid={`ubo-${i}-nat`} />
+            </div>
+            <div className="col-span-2">
+              <label className="block">
+                {i === 0 && (
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-fg-subtle mb-1">
+                    ¿Es PEP?
+                  </div>
+                )}
+                <select
+                  className="prosper-input w-full h-10 text-sm"
+                  value={u.is_pep ? "yes" : "no"}
+                  onChange={(e) => setUbos(ubos.map((x, idx) =>
+                    idx === i ? { ...x, is_pep: e.target.value === "yes" } : x))}
+                  data-testid={`ubo-${i}-pep`}
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Sí</option>
+                </select>
+              </label>
+            </div>
+            <div className="col-span-1">
+              {ubos.length > 1 && (
+                <button type="button"
+                  onClick={() => setUbos(ubos.filter((_, idx) => idx !== i))}
+                  className="h-10 w-full text-xs text-danger hover:bg-danger/10 rounded"
+                  data-testid={`ubo-${i}-remove`}>×</button>
+              )}
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center justify-between pt-2">
+          <button type="button"
+            onClick={() => setUbos([...ubos, { full_name: "", ownership_pct: 0, nationality: "", is_pep: false }])}
+            className="text-xs font-mono uppercase tracking-wider text-primary hover:underline"
+            data-testid="ubo-add">+ Agregar UBO</button>
+          <div className={`text-[11px] font-mono ${total > 100 ? "text-danger" : "text-fg-muted"}`}
+               data-testid="ubo-total">
+            Total · {total}% {total > 100 && "(supera 100%)"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepDocuments({ docs, setDocs }:
+  { docs: Record<string, boolean>; setDocs: (d: Record<string, boolean>) => void }) {
+  const toggle = (k: string) => setDocs({ ...docs, [k]: !docs[k] });
+  return (
+    <div data-testid="step-content-5">
+      <Kicker>Paso 5 / 7 · Documentos</Kicker>
+      <Title>Cargá la documentación corporativa</Title>
+      <p className="text-sm text-fg-muted mb-5">
+        Los documentos marcados con * son obligatorios. (Upload real activado tras
+        configurar AiPrise — por ahora, confirmá que los tenés listos para enviar
+        por email a compliance.)
+      </p>
+      <ul className="space-y-2">
+        {DOC_KINDS.map((d) => {
+          const required = ["certificate", "board_resolution", "tax_id"].includes(d.key);
+          const checked = !!docs[d.key];
+          return (
+            <li key={d.key}>
+              <label
+                className={`flex items-center gap-3 p-3 rounded border cursor-pointer transition-colors
+                            ${checked ? "border-primary bg-primary/5" : "border-border hover:bg-surface-hover"}`}
+                data-testid={`doc-${d.key}`}
+              >
+                <input type="checkbox" checked={checked} onChange={() => toggle(d.key)}
+                       data-testid={`doc-cb-${d.key}`}
+                       className="h-4 w-4 rounded border-border text-primary" />
+                <div className="flex-1">
+                  <div className="text-sm font-display font-semibold text-fg">
+                    {d.label} {required && <span className="text-danger">*</span>}
+                  </div>
+                  <div className="text-[11px] text-fg-subtle">
+                    {checked ? "Listo para enviar" : "Pendiente"}
+                  </div>
+                </div>
+                <FileUp size={14} className="text-fg-subtle" />
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function StepVerification({ ctx }: { ctx: ApplyContext }) {
+  return (
+    <div data-testid="step-content-6">
+      <Kicker>Paso 6 / 7 · Verificación</Kicker>
+      <Title>Verificación de identidad con AiPrise</Title>
+      <p className="text-sm text-fg-muted mb-5">
+        Una vez confirmes tu envío, te enviaremos por email
+        (<strong>{ctx.primary_email}</strong>) un link de AiPrise para validar
+        identidad biométrica + documento. Toma menos de 3 minutos.
+      </p>
+      <div className="rounded-lg border border-border bg-surface p-5">
+        <div className="flex items-start gap-3">
+          <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+            <ShieldCheck size={18} />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-display font-bold text-fg">
+              Proveedor: AiPrise
+            </div>
+            <div className="text-xs text-fg-muted mt-1">
+              KYC certificado · Sandbox simulado activo si templates no están configurados.
+              Las decisiones se reflejan automáticamente en tu dashboard.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepReview({ ctx, personal, corpLegalName, ubos, docs, accept, setAccept }:
+  { ctx: ApplyContext; personal: PersonalData; corpLegalName: string;
+    ubos: UBOInput[]; docs: Record<string, boolean>;
+    accept: boolean; setAccept: (b: boolean) => void }) {
+  const filled = ubos.filter((u) => u.full_name.trim().length > 0);
+  const docCount = Object.values(docs).filter(Boolean).length;
+  return (
+    <div data-testid="step-content-7">
+      <Kicker>Paso 7 / 7 · Revisar y enviar</Kicker>
+      <Title>Casi listo</Title>
+      <p className="text-sm text-fg-muted mb-5">
+        Confirmá los datos. Una vez enviado, compliance los revisará y te
+        notificaremos por email.
+      </p>
+      <div className="space-y-4 text-sm">
+        <ReviewBlock label="Empresa" items={[
+          ["Razón social",   corpLegalName],
+          ["Nombre comercial", ctx.commercial_name],
+          ["País",           ctx.country],
+          ["Tax ID",         ctx.tax_id],
+        ]} />
+        <ReviewBlock label="Aplicante" items={[
+          ["Nombre completo", `${personal.first_name} ${personal.last_name}`],
+          ["Nacionalidad",    personal.nationality],
+          ["Documento",       personal.doc_id],
+          ["Fecha nac.",      personal.dob],
+        ]} />
+        <div className="rounded border border-border p-4">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-fg-subtle mb-2">
+            UBOs ({filled.length})
+          </div>
+          <ul className="space-y-1 text-xs text-fg-muted" data-testid="review-ubos">
+            {filled.map((u, i) => (
+              <li key={i}>• {u.full_name} — {u.ownership_pct}%{u.is_pep ? " · PEP" : ""}</li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded border border-border p-4 flex items-center justify-between">
+          <span className="text-fg-muted">Documentos preparados</span>
+          <span className="font-mono text-fg">{docCount} / {DOC_KINDS.length}</span>
+        </div>
+      </div>
+
+      <label className="flex items-start gap-3 mt-6 p-3 rounded border border-border bg-surface cursor-pointer"
+             data-testid="apply-terms">
+        <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)}
+               className="h-4 w-4 mt-0.5 rounded border-border text-primary"
+               data-testid="apply-terms-cb" />
+        <span className="text-xs text-fg-muted">
+          Confirmo que la información provista es verdadera y completa. Acepto los{" "}
+          <a href="/terms" className="text-primary hover:underline">Términos</a> y la{" "}
+          <a href="/privacy" className="text-primary hover:underline">Política de Privacidad</a> de Prosper.
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/* ---------------- Bits ---------------- */
+
+function CenterShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-bg p-6">{children}</div>
+  );
+}
+
+function Kicker({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle mb-1">
+      {children}
+    </div>
+  );
+}
+function Title({ children }: { children: React.ReactNode }) {
+  return <h1 className="font-display font-bold text-2xl text-fg tracking-tight mb-3">{children}</h1>;
+}
+
+function Pre({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div>
+      <div className="text-[10px] font-mono uppercase tracking-wider text-fg-subtle mb-1">
+        {label}
+      </div>
+      <div className="text-sm text-fg font-mono">{value || "—"}</div>
+    </div>
+  );
+}
+
+function ReviewBlock({ label, items }:
+  { label: string; items: Array<[string, string | undefined | null]> }) {
+  return (
+    <div className="rounded border border-border p-4" data-testid={`review-${label.toLowerCase()}`}>
+      <div className="text-[10px] font-mono uppercase tracking-wider text-fg-subtle mb-2">
+        {label}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+        {items.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-fg-muted">{k}</dt>
+            <dd className="text-fg font-mono">{v || "—"}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function FormField({ label, value, onChange, placeholder, type = "text", testid }:
   { label: string; value: string; onChange: (v: string) => void;
-    placeholder?: string; type?: string; required?: boolean; testid: string }) {
+    placeholder?: string; type?: string; testid: string }) {
   return (
     <label className="block">
       {label && (
@@ -236,9 +582,8 @@ function Field({ label, value, onChange, placeholder, type = "text", required, t
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        required={required}
-        data-testid={`apply-${testid}`}
         className="prosper-input w-full h-10 text-sm"
+        data-testid={`apply-${testid}`}
       />
     </label>
   );

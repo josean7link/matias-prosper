@@ -60,7 +60,7 @@ async def client_dashboard(user: CurrentUser = Depends(get_current_user)):
     # Positions
     positions = await col(POSITIONS).find(
         {"org_id": org_id, "is_deleted": False}, {"_id": 0})\
-        .sort("start_date", -1).to_list(200)
+        .sort("start", -1).to_list(200)
     active_positions = [p for p in positions if p.get("status") == "active"]
 
     # Transactions (latest 100 for sums + 5 for ledger)
@@ -72,14 +72,14 @@ async def client_dashboard(user: CurrentUser = Depends(get_current_user)):
     # KPIs
     subscribed = sum(t.get("amount", 0) for t in txs if t.get("type") == "subscribe")
     redeemed   = sum(t.get("amount", 0) for t in txs if t.get("type") == "redeem")
-    onramped   = sum(t.get("amount", 0) for t in txs if t.get("type") == "deposit")
-    offramped  = sum(t.get("amount", 0) for t in txs if t.get("type") == "withdraw")
+    onramped   = sum(t.get("amount", 0) for t in txs if t.get("type") == "onramp")
+    offramped  = sum(t.get("amount", 0) for t in txs if t.get("type") == "offramp")
     available_usdc = max(0, onramped - subscribed + redeemed - offramped)
 
-    principal_invested = sum(p.get("principal", 0) for p in active_positions)
-    accrued_total      = sum(p.get("accrued", 0) for p in positions)
+    principal_invested = sum(p.get("principal_usd", 0) or 0 for p in active_positions)
+    accrued_total      = sum(p.get("accrued_interest", 0) or 0 for p in positions)
 
-    weighted_apr_num = sum((p.get("principal", 0) or 0) * (p.get("apr_bps", 0) or 0)
+    weighted_apr_num = sum((p.get("principal_usd", 0) or 0) * (p.get("apr_bps", 0) or 0)
                             for p in active_positions)
     avg_apr_bps = (weighted_apr_num / principal_invested) if principal_invested else 0
 
@@ -95,15 +95,15 @@ async def client_dashboard(user: CurrentUser = Depends(get_current_user)):
         months.append(key)
     yield_by_month: dict[str, float] = {k: 0.0 for k in months}
     for p in positions:
-        ts = (p.get("start_date") or "")[:7]
+        ts = (p.get("start") or "")[:7]
         if ts in yield_by_month:
-            yield_by_month[ts] += p.get("accrued", 0) or 0
+            yield_by_month[ts] += p.get("accrued_interest", 0) or 0
     monthly_yield_series = [{"month": k, "yield_usd": round(v, 2)}
                             for k, v in yield_by_month.items()]
 
     # Projected vs realized annual
-    realized_ytd = sum(p.get("accrued", 0) for p in positions
-                       if (p.get("start_date") or "")[:4] == str(now.year))
+    realized_ytd = sum(p.get("accrued_interest", 0) or 0 for p in positions
+                       if (p.get("start") or "")[:4] == str(now.year))
     projected_annual = principal_invested * (avg_apr_bps / 10_000)
 
     return {
@@ -118,15 +118,15 @@ async def client_dashboard(user: CurrentUser = Depends(get_current_user)):
         },
         "positions": [{
             "position_id":   p.get("position_id"),
-            "product":       p.get("product", "Term Staking"),
-            "principal":     p.get("principal"),
-            "accrued":       p.get("accrued"),
-            "apr_bps":       p.get("apr_bps"),
+            "product":       "Term Staking",
+            "principal":     p.get("principal_usd") or 0,
+            "accrued":       p.get("accrued_interest") or 0,
+            "apr_bps":       p.get("apr_bps") or 0,
             "apr_pct":       round((p.get("apr_bps") or 0) / 100, 2),
-            "start_date":    p.get("start_date"),
-            "maturity_date": p.get("maturity_date"),
+            "start_date":    p.get("start"),
+            "maturity_date": p.get("maturity"),
             "status":        p.get("status"),
-            "days_to_maturity": _days_to(p.get("maturity_date")),
+            "days_to_maturity": _days_to(p.get("maturity")),
         } for p in active_positions],
         "recent_transactions": [{
             "tx_id":          t.get("tx_id"),

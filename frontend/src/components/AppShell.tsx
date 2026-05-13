@@ -32,7 +32,7 @@ const CLIENT_NAV: NavItem[] = [
   { href: "/client/deposit",    label: "Cargar / Retirar",  icon: ArrowDownUp, soon: true },
   { href: "/client/investments",label: "Inversiones",       icon: Coins, soon: true },
   { href: "/client/yield",      label: "Rendimientos",      icon: TrendingUp, soon: true },
-  { href: "/client/profile",    label: "Perfil",            icon: User, soon: true },
+  { href: "/client/profile",    label: "Perfil",            icon: User },
   { href: "/client/services",   label: "Servicios futuros", icon: Sparkles, soon: true },
 ];
 
