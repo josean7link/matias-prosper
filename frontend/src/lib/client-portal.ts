@@ -16,6 +16,14 @@ export interface ClientMe {
     kyb_reject_reason?: string | null;
   };
   features: { can_operate: boolean; can_view_data: boolean; can_edit_profile: boolean };
+  onboarding: {
+    stage: "not_started" | "applied" | "in_review" | "needs_info" | "approved" | "rejected";
+    percent: number;
+    checklist_done: number;
+    checklist_total: number;
+    docs_count: number;
+    has_case: boolean;
+  };
 }
 
 export interface ClientKpis {

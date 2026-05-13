@@ -26,6 +26,38 @@ async def client_me(user: CurrentUser = Depends(get_current_user)):
         {"org_id": user.org_id, "is_deleted": False}, {"_id": 0})
     if not org:
         raise HTTPException(404, "Organization not found")
+
+    # ---- Onboarding progress (derived from KybCase if any) ----
+    kyb_status = org.get("kyb_status") or "pending"
+    case = await col(KYB_CASES).find_one(
+        {"org_id": user.org_id, "is_deleted": False},
+        {"_id": 0, "checklist": 1, "documents": 1, "status": 1},
+        sort=[("created_at", -1)])
+
+    checklist_total = 8
+    checklist_done  = 0
+    docs_count      = 0
+    if case:
+        checklist_done = sum(1 for it in (case.get("checklist") or []) if it.get("checked"))
+        docs_count     = len(case.get("documents") or [])
+
+    if kyb_status == "approved":
+        stage = "approved"; pct = 100
+    elif kyb_status == "rejected":
+        stage = "rejected"; pct = 0
+    elif kyb_status == "in_review":
+        stage = "in_review"
+        pct = max(40, round(checklist_done / checklist_total * 100))
+    elif kyb_status == "needs_info":
+        stage = "needs_info"
+        pct = max(60, round(checklist_done / checklist_total * 100))
+    elif case:
+        stage = "applied"
+        pct = max(40, round(checklist_done / checklist_total * 100))
+    else:
+        stage = "not_started"
+        pct = 0
+
     return {
         "user": {"user_id": user.user_id, "email": user.email,
                   "full_name": getattr(user, "full_name", None),
@@ -35,16 +67,24 @@ async def client_me(user: CurrentUser = Depends(get_current_user)):
             "legal_name":     org.get("legal_name"),
             "commercial_name": org.get("commercial_name"),
             "country":        org.get("country"),
-            "kyb_status":     org.get("kyb_status") or "pending",
+            "kyb_status":     kyb_status,
             "env":            org.get("env") or "sandbox",
             "tier":           org.get("tier") or "T2",
             "paused":         bool(org.get("paused")),
             "kyb_reject_reason": org.get("kyb_reject_reason"),
         },
         "features": {
-            "can_operate":    (org.get("kyb_status") == "approved") and not org.get("paused"),
+            "can_operate":    (kyb_status == "approved") and not org.get("paused"),
             "can_view_data":  True,
             "can_edit_profile": True,
+        },
+        "onboarding": {
+            "stage":           stage,
+            "percent":         pct,
+            "checklist_done":  checklist_done,
+            "checklist_total": checklist_total,
+            "docs_count":      docs_count,
+            "has_case":        case is not None,
         },
     }
 
