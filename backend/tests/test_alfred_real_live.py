@@ -9,6 +9,9 @@ import os
 import asyncio
 
 import pytest
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 pytestmark = pytest.mark.live
 

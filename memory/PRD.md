@@ -280,7 +280,29 @@ Real Alfred Pay "Penny" API integrada en `sandbox` mode con creds del cliente.
 - Webhook URL en dashboard Alfred → `/api/v1/webhooks/alfred`.
 - Mapear status events (`FIAT_DEPOSIT_RECEIVED`, `TRADE_COMPLETED`, `ON_CHAIN_INITIATED`, `ON_CHAIN_COMPLETED`, `FAILED`) → enums internos.
 
-**Mocked todavía**: AiPrise · Resend · TRM Labs · Prosper (Stellar). **Alfred Pay = LIVE sandbox** ✅.
+**Mocked todavía**: AiPrise · Resend · TRM Labs · Sentry · Datadog. **Alfred Pay = LIVE sandbox** ✅. **Prosper Stellar = LIVE development** ✅.
+
+## ✅ Sprint 12.2 — Prosper Stellar live integration (2026-05-14)
+
+Real Prosper API (`https://apidev.protocol-prosper.io`) integrada en modo `development` con creds del cliente.
+
+**Backend** (`integrations/prosper/real.py` reescrito completo):
+- Login: `POST /api/v1/auth/login` con `{username, password}` → `{token, createdAt, expiresAt}`.
+- JWT cacheado in-process con soft TTL (refresh 60s antes del expiry) + auto-relogin on 401.
+- Endpoints reales corregidos: todo bajo `/api/v1/prosper/...` (no `/v1/...`):
+  - `POST /prosper/users/new` (NewUserDto)
+  - `POST /prosper/users/deposit` (DepositDto)
+  - `DELETE /prosper/users/retire` con body DepositDto ← era el "withdraw" mal mapeado
+  - `POST /prosper/users/transfer` (TransferDto) ← antes apuntaba a `/tokens/transfer`
+  - `POST /prosper/tokens/mint`, `POST /prosper/funds`
+  - `GET /prosper/users/{prosperId}/balances`, `.../transactions?limit&page&status&txType`
+  - `GET /prosper/assets`
+- `health_check()` hace login + reporta `jwt_expires_at`.
+- `/v1/status` live-pinga Prosper cuando `PROSPER_MODE != mock` → muestra "modo development · login ok".
+
+**.env**: `PROSPER_MODE=development`, `PROSPER_API_BASE=https://apidev.protocol-prosper.io`, user/pass del cliente.
+
+**Tests**: `test_prosper_real_live.py` (mark `live`) valida login real. Pasa contra el sandbox. Live evidence en `/status` con ambos integradores reales pingeando OK.
 
 
 - Sumsub Web SDK integration en `/apply` (continuar prompt 1 de Fase 5).

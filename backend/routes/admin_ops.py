@@ -315,9 +315,27 @@ async def _build_status_payload():
         services.append({"id": "alfred", "name": "Alfred (Onramp/Offramp)",
                           "status": "operational",
                           "detail": f"modo {alfred_mode}"})
-    services.append({"id": "prosper", "name": "Prosper backend (Stellar)",
-                      "status": "operational",
-                      "detail": f"modo {prosper_mode}"})
+    if prosper_mode in ("development", "production"):
+        try:
+            from integrations.prosper.factory import get_adapter as _prosper_adapter
+            pa = _prosper_adapter()
+            ph = await pa.health_check()  # type: ignore[attr-defined]
+            if ph.get("ok"):
+                services.append({"id": "prosper", "name": "Prosper backend (Stellar)",
+                                  "status": "operational",
+                                  "detail": f"modo {prosper_mode} · login ok"})
+            else:
+                services.append({"id": "prosper", "name": "Prosper backend (Stellar)",
+                                  "status": "degraded",
+                                  "detail": (ph.get("error") or "login failed")[:120]})
+        except Exception as e:
+            services.append({"id": "prosper", "name": "Prosper backend (Stellar)",
+                              "status": "degraded",
+                              "detail": str(e)[:120]})
+    else:
+        services.append({"id": "prosper", "name": "Prosper backend (Stellar)",
+                          "status": "operational",
+                          "detail": f"modo {prosper_mode}"})
 
     all_op = all(s["status"] == "operational" for s in services
                   if not s.get("optional"))
