@@ -372,3 +372,30 @@ Real Prosper API (`https://apidev.protocol-prosper.io`) integrada en modo `devel
 **Pendiente para cerrar el último 5% del onramp E2E real** (lo único que falta):
 - Crear un customer en el dashboard Alfred (o programáticamente vía `POST /customers` — pero ese flow requiere recolectar KYC PII del usuario por su iframe). Setear `ALFRED_DEFAULT_CUSTOMER_ID` en `.env` mientras tanto.
 - Probar transferencia bancaria sandbox real → Alfred dispara `FIAT_DEPOSIT_RECEIVED` → `TRADE_COMPLETED` → `ON_CHAIN_COMPLETED` → nuestro webhook receiver auto-buyea PUSD en la wallet Stellar de la org.
+
+## ✅ Sprint 12.6 — Alfred Hybrid KYB + KYC (2026-02 / iteration_17)
+
+**Reemplaza AiPrise por Alfred KYC/KYB nativo** para unificar onboarding y resolver el último 5% del onramp E2E (faltaba `alfred_customer_id`).
+
+**Backend nuevos archivos**:
+- `integrations/alfred/kyc.py` — `RealAlfredKycAdapter` (host separado: `api-dev-services.alfredpay.app/api/v1`) + `MockAlfredKycAdapter`. Factory `get_kyc_adapter()` con env `ALFRED_KYC_MODE` (mock/sandbox/production).
+- `routes/alfred_kyc.py` — 4 endpoints:
+  - `POST /v1/onboarding/alfred/kyb/start` (token-gated /apply): crea customer KYB, persiste `alfred_customer_id` + `alfred_kyb_iframe_url` en `organizations`. Idempotente.
+  - `POST /v1/onboarding/alfred/kyc/start` (auth): crea customer KYC para el user actual.
+  - `GET /v1/onboarding/alfred/status?customer_id=…`: poll endpoint para el wizard.
+  - `GET /v1/alfred/mock-kyc/{cid}` + `POST /v1/alfred/mock-kyc/{cid}/settle?decision=approve|reject` — HTML hosted-widget mock + síntesis de webhook HMAC-firmado.
+
+**Backend modificaciones**:
+- `routes/client_alfred.py::_handle_customer_event()` — nuevo handler para `customer.kyb.*` y `customer.kyc.*` (HMAC verificado). Flipea `org.kyb_status` y dispara `ensure_org_prosper_wallet()` al aprobar KYB.
+- `routes/client_alfred.py` `create_onramp` — ahora pasa `customer_id=org.alfred_customer_id` al adapter (corrige 422 que tenía pendiente Sprint 12.5).
+- `routes/client_portal.py::apply_finalize` — auto-arranca el customer KYB en Alfred al enviar el wizard; retorna `alfred_kyb` con iframe_url.
+- `models.py` — `Organization.alfred_customer_id` + `User.alfred_customer_id`.
+- `.env` — `ALFRED_KYC_MODE=mock`, `ALFRED_KYC_BASE_SANDBOX`, `ALFRED_KYC_BASE_PRODUCTION`, `AIPRISE_DEPRECATED=1`.
+
+**Frontend**:
+- `apply/page.tsx` `StepVerification` — reemplaza tarjeta AiPrise por iframe embebido de Alfred. Polling cada 3s a `/status` + listener `window.message` (`alfred:kyc:approve`/`reject`). Badge dinámico (Pendiente/Aprobado/Rechazado).
+- Step 5 actualizado: docs se suben directamente en widget Alfred (antes decía "email a compliance").
+
+**Tests**: 10/10 pytest pass (`test_sprint12_6_alfred_kyc.py`). E2E mock validado live: KYB iniciado → approve → org.kyb_status='approved' → Prosper wallet provisionada (`stellar_address: GDJV4…`). Frontend Step 6 renderiza iframe + status badge correctamente.
+
+**Para activar Alfred KYC live**: flipear `ALFRED_KYC_MODE=sandbox` en `.env` y confirmar URLs base (default ya correcto).
