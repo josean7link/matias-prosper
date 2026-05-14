@@ -161,11 +161,27 @@ Frontend:
 
 Comprar Prosper Yield Token (suscripción), gestión de posiciones, redenciones.
 
-## 🟡 Phase 9 — Portal Cliente · Invest (next P1)
-Comprar Prosper Yield Token (suscripción), gestión de posiciones, redenciones.
-Implementar también el flujo de offramp desde posición (hoy stubeado).
+## ✅ Phase 9 — Compra Automática Prosper (2026-05-14)
+Backend (`integrations/prosper/` + `routes/client_invest.py` + `jobs/accrual.py`):
+- **Adapter pattern**: `ProsperAdapter` interface + `MockProsperAdapter` (idempotente por `prosper_tx_id`, estado in-process) + `RealProsperAdapter` con HTTP/JWT (auto-refresh on 401). Switch por `PROSPER_MODE=mock|development|production`. Endpoints reales esperados: `/v1/Auth/Login`, `/v1/users/new`, `/v1/users/deposit`, `/v1/users/withdraw`, `/v1/tokens/transfer`, `/v1/users/{id}/balances`, `/v1/users/{id}/transactions`, `/v1/assets/`.
+- **Products** seeded: liquid_v1 (sin lock, 6% APR), term_30 (7.5%), term_90 (9%), term_180 (11%). Lazy ensure on startup.
+- **Auto-buy post-onramp**: cuando un onramp se settlea (vía webhook real o `mock-settle`), se dispara `trigger_buy_after_onramp` que: (1) ensure wallet Stellar, (2) genera `prosper_tx_id` UUIDv4, (3) crea TX `subscribe` pending, (4) llama `deposit_tokens`, (5) crea Position con APR y maturity del producto, (6) marca TX confirmed con `tx_hash` y `ledger`. Si falla cualquier step → TX failed + Alert operational warning para investigación. Idempotente: si el onramp ya tiene un subscribe TX, no se duplica.
+- **Manual buy** (`POST /client/positions`): valida producto activo, min/max amount, saldo USDC libre, KYB aprobado.
+- **Redeem** (`POST /client/positions/{id}/redeem`): liquid o matured pueden redimir; calls `withdraw_tokens` y crea TX `redeem`.
+- **Endpoints**: `GET /client/products`, `GET /client/balances` (combina USDC libre + balance_prosper + balance_xlm desde adapter), `GET /client/positions`, `GET /client/positions/{id}` (incluye `events[]`), `POST /client/positions`, `POST /client/positions/{id}/redeem`.
+- **Daily accrual** vía APScheduler (cron 0 0 * * * UTC) — `jobs.accrual.run_accrual_once()` actualiza `accrued_interest` y flippea status a `matured` cuando corresponde. Idempotente dentro del día (chequea `last_accrued_date`).
 
-## 🟡 Future (per original PRD)
+Frontend:
+- `/client/invest` — selector visual de productos con APR badge + monto + preview en vivo (USDC→PROS, APR, maturity, yield estimado) + modal de confirmación con disclaimer regulatorio.
+- `/client/investments` — listado de posiciones con KPIs (activas, principal total, yield acumulado).
+- `/client/investments/[id]` — detalle con 3 KPI cards, timeline de eventos (subscribe, redeem) con tx_hash linkable a Stellar Expert, botón "Redimir" cuando aplica.
+- `/client/onramp/[id]/success` — **NUEVO**: card "Compra automática Prosper" con tokens recibidos, APR, producto, maturity y tx Stellar — junto al detalle del onramp.
+
+14 backend tests + frontend 100% (`iteration_13.json`). Zero critical issues. End-to-end verificado: ARS 100k → 96.31 USDC → 96.31 PROS posición activa al instante con APR 6% en producto `liquid_v1`.
+
+**Switch a producción Prosper**: setear `PROSPER_API_BASE`, `PROSPER_API_USER`, `PROSPER_API_PASS` reales y `PROSPER_MODE=development|production`. El stub `RealProsperAdapter` ya implementa todos los endpoints con JWT auto-refresh.
+
+
 - Sumsub Web SDK integration en `/apply` (continuar prompt 1 de Fase 5).
 - Audit log viewer `/admin/compliance/audit` (continuar prompt 2 de Fase 5).
 - Push notifications API para alertas critical (continuar prompt 3 de Fase 5).
