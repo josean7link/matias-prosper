@@ -214,6 +214,49 @@ Página `/client/profile` rediseñada con 5 tabs y session-aware auth.
 
 **Switch a producción**: `MFA_FERNET_KEY` ya seedeado en `.env` (rotalo en prod). Para hard-delete de cuentas tras los 7d, agendar cron diario que flippee `users` con `deletion_effective_at < now()` a `status='deleted'` (P2 backlog).
 
+## ✅ Sprint 12 — Polish + Demo hardening + Status/Legal + Docs + E2E (2026-05-14)
+
+**Backend** (`routes/admin_ops.py` + middleware + indices):
+- `POST /v1/admin/ops/wipe-demo` (super_admin) — limpia 13 colecciones filtrando `is_demo=true`, requiere confirm string `"WIPE-DEMO"`, devuelve summary por colección. Audit-logged.
+- `POST /v1/admin/ops/seed-demo-client` (super_admin) — crea 1 org demo + 1 client_admin + (opcional) 2 tx confirmadas + 1 position activa con 30d de accrual. Tarda ~150ms. Marcado todo `is_demo=true`.
+- `GET /v1/status` — público, sin auth. Agrega health checks de Mongo, Redis (optional → no cuenta para overall), API, Admin, Cliente, Webhooks delivery fail-rate, Alfred mode, Prosper mode. Memoizado 5s.
+- Security headers globales: HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
+- Rate limit token-bucket in-process (`rate_limit()` helper): 10/min `passwordless-login`, 30/min `passwordless-token`. Bypass vía `PROSPER_DISABLE_RATELIMIT=1`. Para multi-worker prod, migrar a Redis (TODO).
+- Sentry hook condicional (sólo init si `SENTRY_DSN` está seteado).
+- Mongo indices hardening: `TRANSACTIONS.tx_hash` (sparse), `ALERTS.assigned_to` (sparse), `SESSIONS.session_id` (unique) + `user_id` + `expires_at`, `NAV_SNAPSHOTS.date` (unique), compounds `(org_id, type, status)`, `(org_id, severity, status)`, `(kyb_status, is_deleted)`.
+
+**Frontend** (público, sin auth):
+- `/status` — banner overall + 8 service rows con icon coloreado + Refrescar button + SWR refresh 30s + footer.
+- `/terms` — Términos de Servicio (10 secciones).
+- `/privacy` — Política de Privacidad (9 secciones).
+- `PublicFooter` componente con stack regulatorio (Arvest, CNV, Caja de Valores, Moody's).
+- `middleware.ts` updated PUBLIC_PATHS.
+- Admin `/admin/clients` — nuevo botón **"Crear demo seedeado"** que llama al seed endpoint y refresca la tabla.
+
+**E2E suite** (`/app/e2e/`):
+- `01-admin-full-flow.spec.ts` — seed demo + admin sees row + client lands on dashboard.
+- `02-api-key-flow.spec.ts` — plaintext-once + revoke security invariant.
+- `03-webhook-delivery.spec.ts` — registered endpoint + HMAC-signed test delivery.
+- `04-cross-org-security.spec.ts` — cross-org 404 + impersonation 403 + anon 401.
+- `05-public-surfaces.spec.ts` — status/terms/privacy renderizan sin auth.
+- `playwright.config.ts` + `tests/_helpers.ts` (loginAs vía dev magic link).
+- Listo para CI: `.github/workflows/ci.yml` ya tiene el job `e2e` que instala chromium y corre la suite contra `STAGING_URL`.
+
+**Docs y deploy kit**:
+- `/app/RUNBOOK.md` — 12 procedimientos operativos + matriz de escalación.
+- `/app/ARCHITECTURE.md` — diagramas + 9 flows críticos + modelo de datos.
+- `/app/COMPLIANCE.md` — regulatory stack + KYC/KYB/KYT/SAR-STR + retention 10y.
+- `/app/INTEGRATIONS.md` — playbooks para AiPrise/Alfred/Prosper/TRM/Resend.
+- `/app/backend/.env.example` — template prod-ready.
+- `/app/backend/Dockerfile` con HEALTHCHECK contra `/api/v1/status`.
+- `/app/.github/workflows/ci.yml` + `deploy-prod.yml` (ECS Fargate + Vercel + Slack notify).
+
+**Testing**:
+- 6/7 phase12 pytest pass + 1 skipped (wipe-demo test es destructivo — skipped intencionalmente).
+- 33/33 pytest combinados entre phase 1/7/8/9/11A/11B/12.
+- Testing agent verificó frontend + backend al 100% (`iteration_16.json`).
+- 7 fallos pre-existentes en phase2/3/5/9_extras son data-count drift por seed pollution entre iteraciones — NO regresiones de Phase 12.
+
 
 - Sumsub Web SDK integration en `/apply` (continuar prompt 1 de Fase 5).
 - Audit log viewer `/admin/compliance/audit` (continuar prompt 2 de Fase 5).
@@ -225,4 +268,4 @@ Página `/client/profile` rediseñada con 5 tabs y session-aware auth.
 ## Notes
 - Old codebase at `/app/legacy/` — do not import from there.
 - Test credentials: `/app/memory/test_credentials.md`.
-- Latest test report: `/app/test_reports/iteration_15.json`.
+- Latest test report: `/app/test_reports/iteration_16.json`.

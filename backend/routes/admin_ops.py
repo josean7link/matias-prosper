@@ -206,9 +206,25 @@ async def seed_demo_client(body: SeedDemoClientIn,
 # ---------------------------------------------------------------------------
 status_router = APIRouter(prefix="/status", tags=["status"])
 
+# Memoize the status payload for 5s — protects against /status?page hammering
+# us via 30s SWR refresh × N concurrent visitors.
+_STATUS_CACHE: dict[str, object] = {"at": 0.0, "data": None}
+_STATUS_TTL_SECONDS = 5
+
 
 @status_router.get("")
 async def status():
+    import time as _t
+    if _STATUS_CACHE["data"] and (_t.time() - float(_STATUS_CACHE["at"])  # type: ignore[arg-type]
+                                    ) < _STATUS_TTL_SECONDS:
+        return _STATUS_CACHE["data"]
+    payload = await _build_status_payload()
+    _STATUS_CACHE["at"]   = _t.time()
+    _STATUS_CACHE["data"] = payload
+    return payload
+
+
+async def _build_status_payload():
     from db import get_client
     import os as _os
     services: list[dict] = []
@@ -234,7 +250,7 @@ async def status():
                           "status": "operational"})
     except Exception:
         services.append({"id": "redis", "name": "OTP Cache (Redis)",
-                          "status": "degraded",
+                          "status": "degraded", "optional": True,
                           "detail": "Fallback a Mongo OTP storage"})
 
     # 3. API (we're answering = ok)
@@ -285,7 +301,8 @@ async def status():
                       "status": "operational",
                       "detail": f"modo {prosper_mode}"})
 
-    all_op = all(s["status"] == "operational" for s in services)
+    all_op = all(s["status"] == "operational" for s in services
+                  if not s.get("optional"))
     overall = "operational" if all_op else (
         "outage" if any(s["status"] == "outage" for s in services)
         else "degraded")
