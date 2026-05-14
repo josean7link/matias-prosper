@@ -411,7 +411,8 @@ function OtpInput({ value, onChange, testid }:
       maxLength={6}
       placeholder="000000"
       className="prosper-input w-full h-12 text-center text-xl font-mono tracking-[0.4em]"
-      data-testid={testid} />
+      data-testid={testid}
+      aria-label="Código de 6 dígitos" />
   );
 }
 

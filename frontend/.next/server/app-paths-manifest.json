@@ -3,6 +3,5 @@
   "/client/api-keys/page": "app/client/api-keys/page.js",
   "/client/widget/page": "app/client/widget/page.js",
   "/client/coming-soon/page": "app/client/coming-soon/page.js",
-  "/client/profile/page": "app/client/profile/page.js",
-  "/client/page": "app/client/page.js"
+  "/client/profile/page": "app/client/profile/page.js"
 }

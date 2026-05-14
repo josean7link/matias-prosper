@@ -130,6 +130,9 @@ Frontend:
 - Phase 5: WebSocket o push real-time para alertas critical.
 - Phase 6: refactor `/admin/clients/new` y detail forms a shadcn `<Select>` y `<DatePicker>` (currently native HTML).
 - Phase 6: "Crear cliente demo con datos seedeados" button (user-requested follow-up).
+- Sprint 11B: cron diario `users.deletion_effective_at < now() → status=deleted` (hard delete tras los 7d de gracia).
+- Sprint 11B: avatar magic-byte sniff (Pillow) + posibilidad de migrar a S3 cuando crezca el tamaño.
+- Sprint 11B: añadir `data-testid="session-current-badge"` y `mfa-verify-submit` para hardening de E2E.
 - Phase 7: i18n ES/EN para portal cliente.
 - Phase 7: replace native date inputs en `/apply` (wizard step 2 + legacy form) por shadcn DatePicker.
 - Phase 7: real document upload (vs placeholder checkboxes) en wizard step 5 — engancha con AiPrise upload SDK cuando esté.
@@ -181,6 +184,36 @@ Frontend:
 
 **Switch a producción Prosper**: setear `PROSPER_API_BASE`, `PROSPER_API_USER`, `PROSPER_API_PASS` reales y `PROSPER_MODE=development|production`. El stub `RealProsperAdapter` ya implementa todos los endpoints con JWT auto-refresh.
 
+## ✅ Sprint 11A — Developer & integration core (2026-05-14)
+Self-service para developers de la organización cliente:
+- `/client/api-keys` — Issue/rotate/revoke con plaintext-once + bcrypt hash + scope sandbox/production gateado por `org.env`.
+- `/client/webhooks` — endpoints HMAC SHA256, eventos curados (`onramp.confirmed`, `subscribe.confirmed`, `position.matured`, etc.), test delivery + log de entregas, reveal-secret bajo auditoría.
+- `/client/developers` — docs interactivos con curl samples + Try it.
+- `/client/sdk` — landing con snippets JS/Python/cURL.
+- `/client/widget` — configurador con preview live + snippet copyable + persistencia en `org.widget_config`.
+- `/client/coming-soon` — registro de interés (5 features) que escribe en `feature_interest`.
+
+Backend `routes/client_developer.py`. 100% tests (`iteration_14.json`).
+
+## ✅ Sprint 11B — Portal Cliente · Profile Hardening (2026-05-14)
+Página `/client/profile` rediseñada con 5 tabs y session-aware auth.
+
+**Backend** (`routes/client_profile.py` + extensions a `auth.py`):
+- `GET/PATCH /v1/client/profile` — full_name, phone, language (es/en/pt), timezone (whitelist).
+- `POST/DELETE /v1/client/avatar` — base64 data URL ≤256 KB persistido inline.
+- **MFA TOTP**: `POST /mfa/setup` (genera secret pyotp + QR `data:image/png;base64,…`), `POST /mfa/verify` (valida live code y devuelve 10 backup codes XXXX-XXXX), `POST /mfa/disable` (TOTP o backup), `POST /mfa/regenerate-codes`. Secret encriptado con Fernet (`MFA_FERNET_KEY`), backup codes bcrypt-hasheados.
+- **Sessions**: `GET /v1/client/sessions` (lista con `is_current`), `DELETE /v1/client/sessions/{id}` (revoke individual; revocar la propia → 401 en próxima call), `POST /sessions/revoke-others`. Implementación: cada login (`/passwordless-token` y `/auth/dev-login`) llama `mint_session_token` que genera `jti` único + inserta doc en `sessions`. `get_current_user` valida que la sesión esté activa (lenient para tokens legacy sin jti).
+- **Notifications**: `GET/PATCH /v1/client/notifications` con 6 toggles (`email_security_alerts`, `email_account_activity`, `email_yield_summary`, `email_marketing`, `inapp_alerts`, `inapp_transactions`).
+- **Account deletion**: `POST /account/request-deletion` (requiere confirm_email match, cooldown 7d, audit log para compliance ops), `POST /cancel-deletion`.
+
+**Frontend** (`/app/frontend/src/app/client/profile/page.tsx` + `components/client/profile/*`):
+- Tabs: **Cuenta** (avatar + datos personales + org card read-only), **Seguridad** (MFA setup wizard QR→verify→backup codes con copy/download, regenerar codes, disable con TOTP o backup), **Sesiones** (lista con device icons + is_current badge, revoke individual + revoke-others), **Notificaciones** (6 toggles agrupados email/in-app), **Eliminar cuenta** (modal con email-match, pending state + cancelación).
+- SWR hooks en `lib/profile.ts` (Profile, MfaSetupResponse, Session types).
+
+11/11 backend pytest pass (`test_phase11b_profile.py`) + frontend 100% verificado vía testing agent (`iteration_15.json`). Sin issues críticos.
+
+**Switch a producción**: `MFA_FERNET_KEY` ya seedeado en `.env` (rotalo en prod). Para hard-delete de cuentas tras los 7d, agendar cron diario que flippee `users` con `deletion_effective_at < now()` a `status='deleted'` (P2 backlog).
+
 
 - Sumsub Web SDK integration en `/apply` (continuar prompt 1 de Fase 5).
 - Audit log viewer `/admin/compliance/audit` (continuar prompt 2 de Fase 5).
@@ -192,4 +225,4 @@ Frontend:
 ## Notes
 - Old codebase at `/app/legacy/` — do not import from there.
 - Test credentials: `/app/memory/test_credentials.md`.
-- Latest test report: `/app/test_reports/iteration_9.json`.
+- Latest test report: `/app/test_reports/iteration_15.json`.
