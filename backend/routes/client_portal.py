@@ -381,4 +381,47 @@ async def apply_finalize(body: ApplyFinalize):
                       context={"org_id": org_id, "case_id": case_id},
                       org_id=org_id, actor_email="system.apply")
 
-    return {"ok": True, "case_id": case_id, "kyb_status": "in_review"}
+    # Sprint 12.6 — Kick off Alfred KYB now so the iframe URL is available
+    # immediately on the status page. Best-effort: if the adapter is in mock
+    # mode we still get a usable URL; if it fails we keep going (compliance
+    # can still review manually).
+    alfred_kyb: dict | None = None
+    try:
+        from integrations.alfred.kyc import get_kyc_adapter
+        kyb_resp = await get_kyc_adapter().create_kyb_customer(
+            org_id=org_id,
+            business={
+                "legal_name":    (body.corporate or {}).get("legal_name") or org.get("legal_name"),
+                "country":       org.get("country") or "ARG",
+                "tax_id":        org.get("tax_id"),
+                "primary_email": org.get("primary_email"),
+                "primary_contact": body.personal or {},
+            },
+            redirect_uri=f"/apply/status?app_id={case_id}",
+        )
+        await col(ORGANIZATIONS).update_one(
+            {"org_id": org_id},
+            {"$set": {
+                "alfred_customer_id":    kyb_resp.customer_id,
+                "alfred_kyb_iframe_url": kyb_resp.iframe_url,
+                "alfred_kyb_init_tx":    kyb_resp.init_transaction,
+                "alfred_kyb_status":     kyb_resp.status,
+                "alfred_kyb_mode":       kyb_resp.mode,
+                "alfred_kyb_started_at": _iso_now(),
+                "updated_at":            _iso_now(),
+            }})
+        alfred_kyb = {
+            "customer_id": kyb_resp.customer_id,
+            "iframe_url":  kyb_resp.iframe_url,
+            "status":      kyb_resp.status,
+            "mode":        kyb_resp.mode,
+        }
+    except Exception as e:  # noqa: BLE001
+        # AiPrise is deprecated; if Alfred KYB fails we still file the case
+        # for compliance to handle manually. Log loud so ops can react.
+        import logging as _lg
+        _lg.getLogger("prosper.apply").exception(
+            "alfred KYB auto-start failed for org=%s: %s", org_id, e)
+
+    return {"ok": True, "case_id": case_id, "kyb_status": "in_review",
+             "alfred_kyb": alfred_kyb}

@@ -192,7 +192,9 @@ export default function ApplyPage() {
           )}
           {step === 4 && <StepUbos ubos={ubos} setUbos={setUbos} />}
           {step === 5 && <StepDocuments docs={docs} setDocs={setDocs} />}
-          {step === 6 && <StepVerification ctx={ctx} />}
+          {step === 6 && <StepVerification ctx={ctx} token={token!}
+                                              personal={personal}
+                                              corpLegalName={corpLegalName} />}
           {step === 7 && (
             <StepReview
               ctx={ctx}
@@ -394,9 +396,9 @@ function StepDocuments({ docs, setDocs }:
       <Kicker>Paso 5 / 7 · Documentos</Kicker>
       <Title>Cargá la documentación corporativa</Title>
       <p className="text-sm text-fg-muted mb-5">
-        Los documentos marcados con * son obligatorios. (Upload real activado tras
-        configurar AiPrise — por ahora, confirmá que los tenés listos para enviar
-        por email a compliance.)
+        Los documentos marcados con * son obligatorios. (Upload se realiza
+        directamente en el widget de Alfred en el siguiente paso — confirmá
+        que los tenés listos para subir.)
       </p>
       <ul className="space-y-2">
         {DOC_KINDS.map((d) => {
@@ -430,31 +432,156 @@ function StepDocuments({ docs, setDocs }:
   );
 }
 
-function StepVerification({ ctx }: { ctx: ApplyContext }) {
+function StepVerification({ ctx, token, personal, corpLegalName }:
+  { ctx: ApplyContext; token: string;
+    personal: PersonalData; corpLegalName: string }) {
+  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "in_iframe" | "approved" | "rejected" | "error">("idle");
+  const [mode, setMode] = useState<string>("");
+  const [errorMsg, setErrorMsg] = useState<string>("");
+
+  // Kick off Alfred KYB customer creation once when user enters this step.
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading");
+    api<{ customer_id: string; iframe_url: string; status: string; mode: string }>(
+      "/v1/onboarding/alfred/kyb/start",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          token,
+          legal_name: corpLegalName || ctx.legal_name,
+          primary_email: ctx.primary_email,
+          country: ctx.country,
+          applicant: {
+            first_name: personal.first_name,
+            last_name:  personal.last_name,
+            dob:        personal.dob,
+            nationality: personal.nationality,
+            doc_id:     personal.doc_id,
+          },
+        }),
+      }
+    )
+      .then((r) => {
+        if (cancelled) return;
+        setIframeUrl(r.iframe_url);
+        setCustomerId(r.customer_id);
+        setMode(r.mode);
+        setStatus(r.status === "approved" ? "approved" : "in_iframe");
+      })
+      .catch((e: Error) => {
+        if (cancelled) return;
+        setErrorMsg(e.message || "Error iniciando KYB");
+        setStatus("error");
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Listen for postMessage from iframe (mock or future real)
+  useEffect(() => {
+    const onMsg = (ev: MessageEvent) => {
+      const d = ev.data;
+      if (typeof d !== "object" || !d) return;
+      if (d.type === "alfred:kyc:approve") {
+        setStatus("approved");
+        toast.success("KYB aprobado por Alfred");
+      } else if (d.type === "alfred:kyc:reject") {
+        setStatus("rejected");
+        toast.error("KYB rechazado");
+      }
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+
+  // Poll backend status every 3s as a fallback (webhook may approve while
+  // iframe focus is elsewhere — covers real-Alfred case too).
+  useEffect(() => {
+    if (!customerId || status === "approved" || status === "rejected") return;
+    const tick = async () => {
+      try {
+        const r = await api<{ alfred_status: string; kyb_status: string }>(
+          `/v1/onboarding/alfred/status?customer_id=${encodeURIComponent(customerId)}`
+        );
+        if (r.alfred_status === "approved" || r.kyb_status === "approved") {
+          setStatus("approved");
+        } else if (r.alfred_status === "rejected") {
+          setStatus("rejected");
+        }
+      } catch { /* ignore */ }
+    };
+    const id = setInterval(tick, 3000);
+    return () => clearInterval(id);
+  }, [customerId, status]);
+
   return (
     <div data-testid="step-content-6">
       <Kicker>Paso 6 / 7 · Verificación</Kicker>
-      <Title>Verificación de identidad con AiPrise</Title>
+      <Title>Verificación de identidad con Alfred</Title>
       <p className="text-sm text-fg-muted mb-5">
-        Una vez confirmes tu envío, te enviaremos por email
-        (<strong>{ctx.primary_email}</strong>) un link de AiPrise para validar
-        identidad biométrica + documento. Toma menos de 3 minutos.
+        Completá KYB hospedado por <strong>Alfred Pay</strong>. Captura de
+        documento corporativo, identidad del firmante y prueba de domicilio.
+        El resultado llega automáticamente vía webhook.
       </p>
-      <div className="rounded-lg border border-border bg-surface p-5">
-        <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-            <ShieldCheck size={18} />
-          </div>
-          <div className="flex-1">
-            <div className="text-sm font-display font-bold text-fg">
-              Proveedor: AiPrise
-            </div>
-            <div className="text-xs text-fg-muted mt-1">
-              KYC certificado · Sandbox simulado activo si templates no están configurados.
-              Las decisiones se reflejan automáticamente en tu dashboard.
-            </div>
-          </div>
+
+      {status === "loading" && (
+        <div className="rounded-lg border border-border bg-surface p-6 text-sm text-fg-muted"
+             data-testid="alfred-kyb-loading">
+          Iniciando sesión con Alfred…
         </div>
+      )}
+
+      {status === "error" && (
+        <div className="rounded-lg border border-danger/40 bg-danger/5 p-5 text-sm text-danger"
+             data-testid="alfred-kyb-error">
+          {errorMsg}
+        </div>
+      )}
+
+      {iframeUrl && (status === "in_iframe" || status === "approved" || status === "rejected") && (
+        <div className="rounded-lg border border-border bg-surface overflow-hidden"
+             data-testid="alfred-kyb-iframe-wrap">
+          <div className="px-4 py-2 flex items-center justify-between border-b border-border bg-bg">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-fg-subtle">
+              Alfred · {mode === "mock" ? "Mock KYB widget" : "KYB"}
+              {customerId && <> · <code className="text-fg">{customerId.slice(0, 18)}</code></>}
+            </div>
+            <span className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full
+                              ${status === "approved" ? "bg-success/20 text-success"
+                                : status === "rejected" ? "bg-danger/20 text-danger"
+                                : "bg-warning/20 text-warning"}`}
+                  data-testid="alfred-kyb-status">
+              {status === "approved" ? "Aprobado"
+                : status === "rejected" ? "Rechazado"
+                : "Pendiente"}
+            </span>
+          </div>
+          <iframe
+            src={iframeUrl}
+            title="Alfred KYB"
+            data-testid="alfred-kyb-iframe"
+            className="w-full"
+            style={{ height: 520, border: 0, background: "#0B0F19" }}
+            allow="camera; microphone; clipboard-read; clipboard-write"
+          />
+          {status !== "approved" && (
+            <div className="px-4 py-3 text-[11px] text-fg-subtle bg-bg border-t border-border">
+              También podés{" "}
+              <a href={iframeUrl} target="_blank" rel="noopener noreferrer"
+                 className="text-primary hover:underline" data-testid="alfred-kyb-popout">
+                abrir en una nueva ventana
+              </a>
+              . Esta sección se actualiza automáticamente al finalizar.
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-4 rounded-lg border border-border bg-surface p-4 text-xs text-fg-muted">
+        <strong className="text-fg">Email de notificación:</strong> {ctx.primary_email}
       </div>
     </div>
   );

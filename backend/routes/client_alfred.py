@@ -20,7 +20,7 @@ from audit import log_action
 from auth import CurrentUser, get_current_user
 from db import (
     col, ALERTS, AUDIT_LOGS, OFFRAMP_ORDERS, ONRAMP_ORDERS, ORGANIZATIONS,
-    TRANSACTIONS, WEBHOOKS, WEBHOOK_EVENTS,
+    TRANSACTIONS, USERS, WEBHOOKS, WEBHOOK_EVENTS,
 )
 from integrations.alfred import (
     AlfredError, current_mode, get_adapter, verify_webhook,
@@ -74,6 +74,72 @@ async def _assert_can_operate(user: CurrentUser) -> dict:
     if org.get("paused"):
         raise HTTPException(403, "Organization is paused")
     return org
+
+
+# ---------------------------------------------------------------------------
+# Sprint 12.6 — Customer KYB / KYC webhook event handler
+# ---------------------------------------------------------------------------
+_KYB_APPROVED = {"customer.kyb.approved", "kyb.approved",
+                  "customer.business.approved"}
+_KYB_REJECTED = {"customer.kyb.rejected", "kyb.rejected",
+                  "customer.business.rejected"}
+_KYC_APPROVED = {"customer.kyc.approved", "kyc.approved",
+                  "customer.individual.approved"}
+_KYC_REJECTED = {"customer.kyc.rejected", "kyc.rejected",
+                  "customer.individual.rejected"}
+
+
+async def _handle_customer_event(*, customer_id: str, evt_type: str,
+                                   payload: dict) -> None:
+    """Update org/user on KYB/KYC decisions and, on KYB approval, kick off
+    Prosper wallet provisioning so the org is ready to onramp immediately."""
+    is_kyb_approved = evt_type in _KYB_APPROVED
+    is_kyb_rejected = evt_type in _KYB_REJECTED
+    is_kyc_approved = evt_type in _KYC_APPROVED
+    is_kyc_rejected = evt_type in _KYC_REJECTED
+
+    # KYB path — match by alfred_customer_id on organizations
+    if is_kyb_approved or is_kyb_rejected:
+        new_status = "approved" if is_kyb_approved else "rejected"
+        org = await col(ORGANIZATIONS).find_one_and_update(
+            {"alfred_customer_id": customer_id},
+            {"$set": {
+                "alfred_kyb_status":  new_status,
+                "kyb_status":         new_status,
+                "kyb_decided_at":     _iso_now(),
+                "updated_at":         _iso_now(),
+            }},
+            return_document=False)
+        if not org:
+            logger.warning("alfred KYB webhook for unknown customer_id=%s", customer_id)
+            return
+        if is_kyb_approved:
+            # Provision Prosper wallet idempotently
+            try:
+                from routes.onramp_flow import ensure_org_prosper_wallet
+                org_doc = await col(ORGANIZATIONS).find_one(
+                    {"alfred_customer_id": customer_id}, {"_id": 0, "org_id": 1})
+                if org_doc:
+                    await ensure_org_prosper_wallet(org_doc["org_id"])
+            except Exception as e:  # noqa: BLE001
+                logger.exception("ensure_org_prosper_wallet after KYB failed: %s", e)
+        return
+
+    # KYC path — match by alfred_customer_id on users
+    if is_kyc_approved or is_kyc_rejected:
+        new_status = "approved" if is_kyc_approved else "rejected"
+        await col(USERS).update_one(
+            {"alfred_customer_id": customer_id},
+            {"$set": {
+                "alfred_kyc_status": new_status,
+                "kyc_status":        new_status,
+                "kyc_decided_at":    _iso_now(),
+                "updated_at":        _iso_now(),
+            }})
+        return
+
+    logger.info("alfred customer.* event ignored (type=%s, customer=%s)",
+                 evt_type, customer_id)
 
 
 async def _sum_today(org_id: str, tx_type: str) -> float:
@@ -203,6 +269,7 @@ async def create_onramp(body: OnrampCreate, request: Request,
             callback_url=callback,
             payment_method=body.payment_method,
             deposit_address=deposit_address,
+            customer_id=org.get("alfred_customer_id"),
         )
     except AlfredError as e:
         await _log_call("create_onramp_order", org_id=user.org_id, user_id=user.user_id,
@@ -569,6 +636,22 @@ async def alfred_webhook(request: Request):
     alfred_id = (evt.get("order_id") or evt.get("alfred_id")
                  or evt.get("referenceId") or evt.get("transactionId"))
     typ = (evt.get("type") or evt.get("status") or "").lower()
+
+    # ---------------------------------------------------------------------
+    # Sprint 12.6 — Customer KYB / KYC events (NOT tied to an order)
+    # Alfred fires these when the user finishes the hosted KYC/KYB widget.
+    # We update the org/user, provision Prosper wallet on KYB approval.
+    # ---------------------------------------------------------------------
+    customer_id = (evt.get("customerId") or evt.get("customer_id")
+                    or (alfred_id if typ.startswith("customer.") else None))
+    if customer_id and typ.startswith("customer."):
+        await _handle_customer_event(customer_id=customer_id, evt_type=typ,
+                                       payload=evt)
+        await log_action(actor=None, action="alfred.webhook.received",
+                         resource_type="webhook_event", resource_id=event_id,
+                         metadata={"type": typ, "customer_id": customer_id})
+        return {"ok": True, "event_id": event_id, "type": typ,
+                 "customer_id": customer_id}
 
     # Sprint 12.4 — map both legacy mock enums (order.*) AND Penny live
     # enums (FIAT_DEPOSIT_RECEIVED, TRADE_COMPLETED, ON_CHAIN_*, FAILED,…).

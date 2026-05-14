@@ -45,6 +45,10 @@ from routes.client_alfred import (
     webhook_router as alfred_webhook_router,
     mock_router as alfred_mock_router,
 )
+from routes.alfred_kyc import (
+    router as alfred_kyc_router,
+    mock_router as alfred_kyc_mock_router,
+)
 from routes.client_invest import router as client_invest_router
 from routes.client_developer import router as client_developer_router
 from routes.client_profile import router as client_profile_router
@@ -531,6 +535,8 @@ api.include_router(apply_public_router, prefix="/v1")
 api.include_router(client_alfred_router, prefix="/v1")
 api.include_router(alfred_webhook_router, prefix="/v1")
 api.include_router(alfred_mock_router, prefix="/v1")
+api.include_router(alfred_kyc_router, prefix="/v1")
+api.include_router(alfred_kyc_mock_router, prefix="/v1")
 api.include_router(client_invest_router, prefix="/v1")
 api.include_router(client_developer_router, prefix="/v1")
 api.include_router(client_profile_router, prefix="/v1")

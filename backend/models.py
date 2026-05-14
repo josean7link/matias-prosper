@@ -53,6 +53,7 @@ class Organization(TimestampMixin):
     allowlist_domains: List[str] = []
     caps: OrgCaps = Field(default_factory=OrgCaps)
     stellar_address: Optional[str] = None
+    alfred_customer_id: Optional[str] = None  # Sprint 12.6 — KYB customer
     start_date: Optional[str] = None
     expected_aum_usd: Optional[float] = None
     internal_notes: Optional[str] = None
@@ -71,6 +72,7 @@ class User(TimestampMixin):
     mfa_enabled: bool = False
     mfa_secret: Optional[str] = None  # encrypted on write — placeholder here
     kyc_status: str = "pending"
+    alfred_customer_id: Optional[str] = None  # Sprint 12.6 — KYC customer
     last_login_at: Optional[str] = None
     status: str = "invited"  # active | paused | invited | deleted
 

@@ -1,0 +1,44 @@
+{
+  "summary": "Sprint 12.6 Alfred Hybrid KYB+KYC integration — backend fully verified (10/10 pytest pass). KYB start gates token (401 on invalid/expired), 200 on valid token returning {customer_id, iframe_url, status=pending, mode=mock}, idempotent on repeat, persists alfred_customer_id+iframe URL on org. KYC start gated by auth (401 unauth, 200 + idempotent for client_admin via dev-login). Status endpoint returns kind=kyb + alfred_status, 404 on unknown. Mock widget GET returns HTML with data-testid=alfred-mock-approve buttons. Mock /settle?decision=approve fires synthetic HMAC-signed webhook → org.kyb_status='approved' + org.alfred_kyb_status='approved' + Prosper wallet provisioned (stellar_address present on org doc verified). decision=reject → 'rejected'. Webhook handler in client_alfred._handle_customer_event routes customer.kyb.* / customer.kyc.* with HMAC verification (verify_webhook). /apply/finalize regression: still returns ok=true AND now includes alfred_kyb={customer_id, iframe_url, status, mode} (verified live). Onramp regression: code at routes/client_alfred.py:272 passes customer_id=org.alfred_customer_id to adapter; real.py:183-189 forwards as customerId — verified in code; live sandbox call returned 422 only because we're in mixed mode (ALFRED_MODE=sandbox + ALFRED_KYC_MODE=mock so the mock-generated cust id is unknown to real Penny — NOT a sprint regression, expected behavior). Frontend code review: StepVerification (apply/page.tsx:435-580) replaces AiPrise — calls /v1/onboarding/alfred/kyb/start in useEffect on step 6, has data-testid=alfred-kyb-iframe and alfred-kyb-status (initial 'Pendiente' badge), listens for postMessage 'alfred:kyc:approve'/'alfred:kyc:reject' and flips badge to 'Aprobado'/'Rechazado', polls /v1/onboarding/alfred/status every 3s as fallback. Live FE step-6 navigation was attempted via Playwright but form inputs lack name attributes (use placeholders) so automated multi-step navigation hit Loop-Prevention threshold; verified by code inspection instead.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/v1/client/onramp/orders", "issue": "Returns 502 'Alfred 422 on /onramp customerId invalid' in current mixed-mode env (ALFRED_MODE=sandbox + ALFRED_KYC_MODE=mock). Code is correct (forwards cust_id properly); user-facing 422 only happens because mock KYC ids aren't known to real Penny. Flipping ALFRED_MODE=mock OR ALFRED_KYC_MODE=sandbox would fix end-to-end."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/apply Step 2 (Tu identidad)", "issues": ["Inputs lack name=… attributes (rely on placeholders) — makes automated/E2E testing harder. Recommend adding name attributes for first_name/last_name/dob/gender/nationality/doc_id so playbook-style tests work."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_sprint12_6_alfred_kyc.py",
+    "/app/test_reports/pytest/sprint12_6_alfred_kyc.xml"
+  ],
+  "action_items": [
+    "(Optional) Add name= attributes on /apply wizard inputs to enable automated multi-step E2E (currently only placeholders).",
+    "(Documentation reminder) To verify onramp E2E mock flow, set ALFRED_MODE=mock OR ALFRED_KYC_MODE=sandbox before exercising /client/onramp/orders. Current mixed mode (sandbox Penny + mock KYC) yields expected 422 because mock cust ids aren't recognized by live Alfred Penny."
+  ],
+  "critical_code_review_comments": [
+    "routes/alfred_kyc.py mock_kyc_settle uses an inline ASGI fake_scope + Request(...) to dispatch the synthetic webhook through alfred_webhook. Works fine for tests but bypasses any middleware (request_id, rate-limit, security headers). Acceptable for mock mode only; consider httpx.AsyncClient against the app for higher fidelity.",
+    "integrations/alfred/kyc.py MockAlfredKycAdapter falls back to APP_URL/localhost when PUBLIC_BASE_URL is empty — would produce a non-loadable iframe in containers without PUBLIC_BASE_URL. Already set in /app/backend/.env but worth a runtime warn.",
+    "client_alfred._handle_customer_event imports ensure_org_prosper_wallet inside the function. Acceptable for circular-import avoidance, but worth a module-level lazy import or refactor.",
+    "client_portal.apply_finalize swallows alfred_kyc start errors silently — only logs at debug. Surface a structured warn (audit log entry) so ops can detect KYB-not-started cases in prod.",
+    "routes/alfred_kyc.kyb_start applies idempotency by checking org.alfred_customer_id AND iframe_url — but the org may have a stale URL from a prior mode. Consider also re-issuing when alfred_kyb_mode != current_kyc_mode().",
+    "Webhook event handler accepts both X-Alfred-Signature and Signature headers — good. But idempotency relies on event_id which mock sets via secrets.token_hex; real Alfred uses its own; both flows OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_sprint12_6_alfred_kyc.py (NEW)",
+    "/app/test_reports/pytest/sprint12_6_alfred_kyc.xml (NEW)",
+    "/app/test_reports/iteration_17.json (NEW)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100% (code review)"},
+  "test_credentials": "client.admin@alemany.capital via GET /api/v1/auth/dev-login. KYB token generated locally with backend JWT_SECRET (purpose=kyb, org_id=org_seed_alemany, link_id=slk_test/slk_fin_test/slk_fe_test). signed_links rows upserted by the test fixture.",
+  "seed_data_creation": "Several signed_links rows upserted (slk_test, slk_fin_test, slk_fin_test2, slk_fe_test) for org_seed_alemany and one for org_seed_finpact. Multiple alfred_customer_id values written to organizations (org_seed_alemany, org_seed_finpact); org_seed_alemany now has kyb_status=approved + stellar_address provisioned by the mock-approve test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All 10 sprint 12.6 backend tests pass (test_sprint12_6_alfred_kyc.py). Frontend step 6 verified by code inspection only — live multi-step Playwright navigation blocked by missing name= attrs on /apply form inputs. To unblock automated FE: either add name= attrs or test step 6 in isolation (mount StepVerification with mocked context). Mixed-mode 422 on /onramp/orders is expected and documented; not a regression. PROSPER_DISABLE_RATELIMIT=1 still set in /app/backend/.env (preview only).",
+  "rca of the issue": "N/A — Sprint 12.6 implementation is correct. The only red flag (502 on /client/onramp/orders) is a mixed-mode artifact (sandbox Penny + mock KYC), not a code bug. Switching ALFRED_KYC_MODE=sandbox or ALFRED_MODE=mock makes E2E onramp pass."
+}
