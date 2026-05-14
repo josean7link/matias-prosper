@@ -327,3 +327,23 @@ Real Prosper API (`https://apidev.protocol-prosper.io`) integrada en modo `devel
 **`aiprise.health_check()`** + `/v1/status` row → `aiprise · operational · auth ok · simulado (sin templates)`. Para activar live KYC/KYB sólo poblar `AIPRISE_KYC_TEMPLATE_ID` y `AIPRISE_KYB_TEMPLATE_ID`.
 
 **Mocked todavía**: Resend · TRM Labs · Sentry · Datadog. **LIVE**: Alfred Pay ✅ · Prosper ✅ · AiPrise (auth) ✅.
+
+## ✅ Sprint 12.4 — Onramp E2E real flow (2026-05-14)
+
+**Org-scoped Prosper wallets** (uno por organización, compartido entre los users del cliente):
+- Nuevo helper `routes/onramp_flow.py::ensure_org_prosper_wallet(org_id)` — idempotente, persiste `prosper_user_id` + `stellar_address` + `prosper_provisioned_at` en el doc de la org.
+- Llamado automáticamente al aprobar un KYB (en `webhooks_aiprise._apply_kyb_decision`) y como lazy retry en `/client/balances` y `_execute_buy`.
+- `deposit_tokens` / `withdraw_tokens` / `get_user_balances` ahora pasan `user.org_id` como `user_reference_id` (mismo que usamos al crear la wallet) → routing correcto a la wallet de la org.
+
+**Mapping de status events Alfred** (`alfred_status_to_internal`):
+- Soporta los 4 enums legacy del mock (`order.pending/confirmed/completed/failed`) Y los 7 de Penny live (`FIAT_DEPOSIT_RECEIVED`, `TRADE_COMPLETED`, `ON_CHAIN_INITIATED`, `ON_CHAIN_COMPLETED`, `FAILED`, `EXPIRED`, `CANCELLED`).
+- Webhook receiver (`/v1/webhooks/alfred`) usa el mapping unificado. Soporta ambos signature headers (`X-Alfred-Signature` legacy + `Signature: t=…,s=…` Penny). Extrae `tx_hash`, `coelsa_id`, `settled_amount` con field names de ambos formatos.
+- Auto-buy se dispara en `confirmed` **o** `completed` (era sólo `confirmed`) — el helper es idempotente vía `related_onramp_id`.
+
+**Bug fix crítico** (`onramp_flow.py`): la projection de Mongo `{"_id":0, "prosper_user_id":1, ...}` devuelve `{}` cuando esos campos no existen — falsy en Python. Cambiado el check a `if org is None` para no tratar orgs nuevas como "not found".
+
+**Live evidence**: org demo creada vía `/admin/clients` → "Crear demo seedeado" → al primer hit en `/client/balances` la wallet se provisiona contra Prosper sandbox real:
+- `stellar_address: GCCHGZRZ4QTI4WRWRKHXAUD7SKCSUHRXOXG66EZLAW4FSMRPDHRLNE77`
+- `balance_xlm: 2.99999` (Prosper auto-funda con XLM para gas)
+
+**Tests**: 30/30 pytest combinados (Phase 1 + 11B + 12 + 12.4 + Alfred live + Prosper live).

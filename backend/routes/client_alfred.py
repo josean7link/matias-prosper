@@ -519,8 +519,12 @@ async def transactions_history(limit: int = Query(200, ge=1, le=500),
 @webhook_router.post("/alfred")
 async def alfred_webhook(request: Request):
     raw = await request.body()
-    sig = request.headers.get("x-alfred-signature", "") or \
-          request.headers.get("X-Alfred-Signature", "")
+    # Mock & legacy adapters use `X-Alfred-Signature`; Penny live uses `Signature`.
+    sig = (request.headers.get("signature")
+            or request.headers.get("Signature")
+            or request.headers.get("x-alfred-signature")
+            or request.headers.get("X-Alfred-Signature")
+            or "")
     if not verify_webhook(payload=raw, signature=sig):
         logger.warning("alfred webhook: invalid signature")
         raise HTTPException(401, "Invalid HMAC signature")
@@ -548,29 +552,43 @@ async def alfred_webhook(request: Request):
         "received_at": _iso_now(),
     })
 
-    alfred_id = evt.get("order_id") or evt.get("alfred_id")
-    typ = (evt.get("type") or "").lower()
-    if alfred_id and typ in {"order.confirmed", "order.completed",
-                              "order.failed", "order.pending"}:
-        new_status = (
-            "confirmed" if typ == "order.confirmed"
-            else "completed" if typ == "order.completed"
-            else "failed"    if typ == "order.failed"
-            else "pending"
-        )
+    alfred_id = (evt.get("order_id") or evt.get("alfred_id")
+                 or evt.get("referenceId") or evt.get("transactionId"))
+    typ = (evt.get("type") or evt.get("status") or "").lower()
+
+    # Sprint 12.4 — map both legacy mock enums (order.*) AND Penny live
+    # enums (FIAT_DEPOSIT_RECEIVED, TRADE_COMPLETED, ON_CHAIN_*, FAILED,…).
+    from routes.onramp_flow import alfred_status_to_internal
+    new_status = alfred_status_to_internal(typ)
+
+    if alfred_id and new_status:
+        # Penny live webhooks use different field names — try both.
+        settled_amount = (evt.get("settled_amount")
+                           or evt.get("toAmount")
+                           or evt.get("amount"))
+        tx_hash = (evt.get("tx_hash") or evt.get("txHash")
+                    or evt.get("transactionHash"))
+        coelsa_id = evt.get("coelsa_id") or evt.get("coelsaId")
+
+        update_doc = {"status": new_status, "updated_at": _iso_now()}
+        if coelsa_id:        update_doc["coelsa_id"]    = coelsa_id
+        if settled_amount:   update_doc["usdc_received"] = settled_amount
+        if tx_hash:          update_doc["tx_hash"]       = tx_hash
+
         # update either onramp or offramp
         ramp_doc = await col(ONRAMP_ORDERS).find_one_and_update(
             {"alfred_id": alfred_id},
-            {"$set": {"status": new_status, "updated_at": _iso_now(),
-                       "coelsa_id": evt.get("coelsa_id"),
-                       "usdc_received": evt.get("settled_amount")}},
+            {"$set": update_doc},
             return_document=False)
         if not ramp_doc:
             await col(OFFRAMP_ORDERS).update_one(
                 {"alfred_id": alfred_id},
-                {"$set": {"status": new_status, "updated_at": _iso_now()}})
-        elif new_status == "confirmed":
-            # Phase 9 — fire automatic Prosper buy
+                {"$set": update_doc})
+        elif new_status in ("confirmed", "completed"):
+            # Phase 9 + 12.4 — fire automatic Prosper buy. Both `confirmed`
+            # (Penny TRADE_COMPLETED / ON_CHAIN_INITIATED) and `completed`
+            # (ON_CHAIN_COMPLETED) are safe trigger points — the helper is
+            # idempotent via `related_onramp_id`.
             updated = await col(ONRAMP_ORDERS).find_one({"alfred_id": alfred_id}, {"_id": 0})
             if updated:
                 from routes.client_invest import trigger_buy_after_onramp

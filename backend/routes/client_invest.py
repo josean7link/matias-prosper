@@ -96,10 +96,31 @@ async def _balance_for(user: CurrentUser) -> float:
 
 @router.get("/balances")
 async def get_balances(user: CurrentUser = Depends(get_current_user)):
-    """Returns available USDC + (when wallet exists) Prosper balance via adapter."""
+    """Returns available USDC + (when wallet exists) Prosper balance via adapter.
+
+    Sprint 12.4: balances are queried per-org now (one wallet per
+    organization). If the org doesn't have a wallet yet, we lazily
+    provision it here so /balances always returns useful data after the
+    first call.
+    """
     available_usdc = await _balance_for(user)
+    org = await col(ORGANIZATIONS).find_one(
+        {"org_id": user.org_id, "is_deleted": False},
+        {"_id": 0, "prosper_user_id": 1, "stellar_address": 1, "kyb_status": 1})
+    # Only attempt provisioning + Prosper balance reads for approved orgs.
+    if not org or org.get("kyb_status") != "approved":
+        return {"available_usdc":   available_usdc,
+                 "address":          None,
+                 "balance_prosper":  None,
+                 "balance_xlm":      None,
+                 "mode":             prosper_adapter().mode}
+
     try:
-        bal = await prosper_adapter().get_user_balances(user.user_id)
+        if not org.get("prosper_user_id"):
+            from routes.onramp_flow import ensure_org_prosper_wallet
+            await ensure_org_prosper_wallet(user.org_id)
+
+        bal = await prosper_adapter().get_user_balances(user.org_id)
         return {
             "available_usdc":   available_usdc,
             "address":          bal.address,
@@ -192,7 +213,7 @@ async def redeem_position(position_id: str,
     total     = round(principal + accrued, 2)
     try:
         resp = await prosper_adapter().withdraw_tokens(
-            user_reference_id=user.user_id,
+            user_reference_id=user.org_id,
             amount=total, prosper_tx_id=ptx)
     except ProsperError as e:
         raise HTTPException(502, f"Stellar withdraw failed: {e}")
@@ -229,24 +250,20 @@ async def redeem_position(position_id: str,
 # ---------------------------------------------------------------------------
 async def _execute_buy(*, user, org, product: dict, amount: float,
                         related_onramp_id: Optional[str], trigger: str) -> dict:
-    """Transactional buy. If ANY step fails, mark TX failed + create alert."""
-    user_doc = await col(USERS).find_one({"user_id": user.user_id}, {"_id": 0})
+    """Transactional buy. If ANY step fails, mark TX failed + create alert.
 
-    # 1. Ensure wallet exists
-    address = user_doc.get("stellar_address")
-    if not address:
-        try:
-            w = await prosper_adapter().create_user_wallet(
-                user_reference_id=user.user_id,
-                prosper_tx_id="wallet_" + str(uuid.uuid4()))
-            address = w.address
-            await col(USERS).update_one(
-                {"user_id": user.user_id},
-                {"$set": {"stellar_address": address,
-                            "updated_at": _iso_now()}})
-        except ProsperError as e:
-            await _record_failure(user, amount, str(e), step="wallet")
-            return {"ok": False, "error": f"wallet creation failed: {e}"}
+    Sprint 12.4: wallet provisioning is now org-scoped (one Prosper wallet
+    per organization, shared across its users). `ensure_org_prosper_wallet`
+    is idempotent — safe to call on every buy.
+    """
+    # 1. Ensure the org has a Prosper wallet (idempotent, lazy retry path).
+    try:
+        from routes.onramp_flow import ensure_org_prosper_wallet
+        wallet = await ensure_org_prosper_wallet(user.org_id)
+        address = wallet["stellar_address"]
+    except ProsperError as e:
+        await _record_failure(user, amount, str(e), step="wallet")
+        return {"ok": False, "error": f"wallet creation failed: {e}"}
 
     # 2. Build Transaction shell (subscribe, pending)
     ptx = str(uuid.uuid4())
@@ -273,10 +290,12 @@ async def _execute_buy(*, user, org, product: dict, amount: float,
     }
     await col(TRANSACTIONS).insert_one(tx_doc.copy())
 
-    # 3. Call deposit_tokens
+    # 3. Call deposit_tokens — use the same reference we used when
+    # provisioning the wallet (org_id), NOT our internal user_id. This
+    # way the Prosper protocol routes the deposit to the right wallet.
     try:
         resp = await prosper_adapter().deposit_tokens(
-            user_reference_id=user.user_id, amount=amount, prosper_tx_id=ptx)
+            user_reference_id=user.org_id, amount=amount, prosper_tx_id=ptx)
     except ProsperError as e:
         await col(TRANSACTIONS).update_one(
             {"tx_id": tx_doc["tx_id"]},

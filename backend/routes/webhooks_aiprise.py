@@ -62,6 +62,21 @@ async def _apply_kyb_decision(*, session_id: str, decision: str,
         {"org_id": app_doc["org_id"]},
         {"$set": {"kyb_status": new_kyb, "updated_at": utc_now()}},
     )
+
+    # Sprint 12.4 — Provision the Prosper wallet for the org immediately
+    # on approval. Best-effort: if Prosper is down we just log + continue;
+    # the lazy `ensure_org_prosper_wallet` call from the onramp flow will
+    # retry the next time the client tries to operate.
+    if new_kyb == "approved":
+        try:
+            from routes.onramp_flow import ensure_org_prosper_wallet
+            await ensure_org_prosper_wallet(app_doc["org_id"])
+        except Exception as e:  # noqa: BLE001
+            logger = __import__("logging").getLogger("prosper.kyb")
+            logger.warning("KYB approved but Prosper wallet provisioning failed "
+                            "for org=%s: %s — will retry lazily.",
+                            app_doc["org_id"], e)
+
     await log_action(actor=None, action="kyb.decided",
                      resource_type="onboarding_application",
                      resource_id=app_doc["application_id"],
