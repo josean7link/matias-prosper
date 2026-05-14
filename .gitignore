@@ -95,19 +95,7 @@ node_modules/@next/swc-linux-arm64-gnu/next-swc.linux-arm64-gnu.node
 node_modules/@next/swc-linux-arm64-musl/next-swc.linux-arm64-musl.node
 frontend/.next/cache/webpack/client-development/15.pack.gz
 -e 
-# Environment and credential files
-.env
-.env.*
-*.env
-credentials.json
-*.pem
-*.key
-.credentials
--e 
-# Environment and credential files
-.env
-.env.*
-*.env
+# (Emergent deployment requires .env files tracked in git so it can inject prod secrets)
 credentials.json
 *.pem
 *.key
