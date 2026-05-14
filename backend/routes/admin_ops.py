@@ -337,6 +337,27 @@ async def _build_status_payload():
                           "status": "operational",
                           "detail": f"modo {prosper_mode}"})
 
+    # 8. AiPrise (KYB/KYC). When templates aren't configured we report
+    # "simulated" — auth is still healthy.
+    aiprise_env = _os.environ.get("AIPRISE_ENVIRONMENT", "sandbox")
+    try:
+        from integrations import aiprise as _aiprise
+        ah = await _aiprise.health_check()
+        if ah.get("ok"):
+            mode_label = "simulado (sin templates)" if not ah.get("templates_configured") \
+                else f"live ({aiprise_env})"
+            services.append({"id": "aiprise", "name": "AiPrise (KYB/KYC)",
+                              "status": "operational",
+                              "detail": f"auth ok · {mode_label}"})
+        else:
+            services.append({"id": "aiprise", "name": "AiPrise (KYB/KYC)",
+                              "status": "degraded",
+                              "detail": (ah.get("error") or "probe failed")[:120]})
+    except Exception as e:
+        services.append({"id": "aiprise", "name": "AiPrise (KYB/KYC)",
+                          "status": "degraded",
+                          "detail": str(e)[:120]})
+
     all_op = all(s["status"] == "operational" for s in services
                   if not s.get("optional"))
     overall = "operational" if all_op else (

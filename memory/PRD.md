@@ -316,3 +316,14 @@ Real Prosper API (`https://apidev.protocol-prosper.io`) integrada en modo `devel
 - Old codebase at `/app/legacy/` — do not import from there.
 - Test credentials: `/app/memory/test_credentials.md`.
 - Latest test report: `/app/test_reports/iteration_16.json`.
+
+## ✅ Sprint 12.3 — AiPrise auth fix + live ping (2026-05-14)
+
+**Bug crítico arreglado** en `integrations/aiprise.py`:
+- Antes: `Authorization: Bearer <key>` → 401 "Bad credentials".
+- Ahora: `X-API-Key: <key>` → 200/403 correcto.
+- Live-validado: las keys sandbox + producción del cliente **ambas son válidas**, sólo necesitaban el header correcto.
+
+**`aiprise.health_check()`** + `/v1/status` row → `aiprise · operational · auth ok · simulado (sin templates)`. Para activar live KYC/KYB sólo poblar `AIPRISE_KYC_TEMPLATE_ID` y `AIPRISE_KYB_TEMPLATE_ID`.
+
+**Mocked todavía**: Resend · TRM Labs · Sentry · Datadog. **LIVE**: Alfred Pay ✅ · Prosper ✅ · AiPrise (auth) ✅.

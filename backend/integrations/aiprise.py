@@ -73,11 +73,41 @@ def _simulate(kind: Literal["kyc", "kyb"], client_ref: str, redirect_uri: str) -
 
 
 def _headers() -> dict:
+    # AiPrise expects `X-API-Key` (NOT `Authorization: Bearer`). Live-tested
+    # 2026-05-14: Bearer → 401 "Bad credentials", X-API-Key → 200/403.
     return {
-        "Authorization": f"Bearer {api_key()}",
+        "X-API-Key":    api_key(),
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Accept":       "application/json",
+        "User-Agent":   "prosper-backend/0.2",
     }
+
+
+# ---------------------------------------------------------------------------
+# Live health probe — only meaningful when running against the live API.
+# Calls verification with an empty template_id; AiPrise responds 403
+# "template_id not associated" when auth is OK + creds invalid otherwise.
+# ---------------------------------------------------------------------------
+async def health_check() -> dict:
+    if not api_key():
+        return {"ok": False, "env": _env(),
+                 "error": f"No API key for env={_env()}",
+                 "simulated": True}
+    payload = {"template_id": "__probe__", "client_reference_id": "__probe__"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(
+                f"{base_url()}/verify/get_user_verification_url",
+                json=payload, headers=_headers())
+    except httpx.HTTPError as e:
+        return {"ok": False, "env": _env(), "error": str(e)[:200]}
+
+    # 401 = bad creds. 403 = template missing (auth ok). 2xx = template ok.
+    if r.status_code == 401:
+        return {"ok": False, "env": _env(),
+                 "error": (r.text or "401 unauthorized")[:200]}
+    return {"ok": True, "env": _env(), "status_code": r.status_code,
+             "templates_configured": bool(kyc_template_id() and kyb_template_id())}
 
 
 # ---------------------------------------------------------------------------
