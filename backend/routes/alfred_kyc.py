@@ -226,18 +226,102 @@ async def kyb_status(customer_id: str = Query(..., min_length=4)):
     org = await col(ORGANIZATIONS).find_one(
         {"alfred_customer_id": customer_id},
         {"_id": 0, "org_id": 1, "alfred_kyb_status": 1, "kyb_status": 1})
+    user_doc = None
+    if not org:
+        user_doc = await col(USERS).find_one(
+            {"alfred_customer_id": customer_id},
+            {"_id": 0, "user_id": 1, "alfred_kyc_status": 1, "kyc_status": 1})
+        if not user_doc:
+            raise HTTPException(404, "Unknown alfred_customer_id")
+
+    # Best-effort: re-read live status from Alfred when in sandbox/production
+    # mode so the wizard converges automatically as Alfred updates the customer.
+    live_status: Optional[str] = None
+    if current_kyc_mode() != "mock":
+        try:
+            live = await get_kyc_adapter().get_customer_status(customer_id)
+            live_status = str(live.get("statusKyc") or "").lower() or None
+        except AlfredError:
+            live_status = None
+
+    if live_status in ("approved", "pending", "rejected", "created"):
+        # Persist + fire side effects when transitioning to approved/rejected
+        normalised = "approved" if live_status == "approved" else (
+            "rejected" if live_status == "rejected" else "pending")
+        if org:
+            await col(ORGANIZATIONS).update_one(
+                {"alfred_customer_id": customer_id},
+                {"$set": {"alfred_kyb_status": normalised,
+                            "updated_at": _iso_now()}})
+            if normalised == "approved" and org.get("kyb_status") != "approved":
+                await col(ORGANIZATIONS).update_one(
+                    {"alfred_customer_id": customer_id},
+                    {"$set": {"kyb_status": "approved",
+                                "kyb_decided_at": _iso_now()}})
+                try:
+                    from routes.onramp_flow import ensure_org_prosper_wallet
+                    await ensure_org_prosper_wallet(org["org_id"])
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("provisioning wallet on poll-approval: %s", e)
+        elif user_doc:
+            await col(USERS).update_one(
+                {"alfred_customer_id": customer_id},
+                {"$set": {"alfred_kyc_status": normalised,
+                            "kyc_status": normalised,
+                            "updated_at": _iso_now()}})
+
     if org:
+        # Re-read in case we just updated
+        org = await col(ORGANIZATIONS).find_one(
+            {"alfred_customer_id": customer_id},
+            {"_id": 0, "org_id": 1, "alfred_kyb_status": 1, "kyb_status": 1})
         return {"kind": "kyb", "org_id": org["org_id"],
                  "alfred_status": org.get("alfred_kyb_status") or "pending",
-                 "kyb_status": org.get("kyb_status") or "pending"}
-    user = await col(USERS).find_one(
+                 "kyb_status": org.get("kyb_status") or "pending",
+                 "live_status": live_status}
+    user_doc = await col(USERS).find_one(
         {"alfred_customer_id": customer_id},
         {"_id": 0, "user_id": 1, "alfred_kyc_status": 1, "kyc_status": 1})
-    if user:
-        return {"kind": "kyc", "user_id": user["user_id"],
-                 "alfred_status": user.get("alfred_kyc_status") or "pending",
-                 "kyc_status": user.get("kyc_status") or "pending"}
-    raise HTTPException(404, "Unknown alfred_customer_id")
+    return {"kind": "kyc", "user_id": user_doc["user_id"],
+             "alfred_status": user_doc.get("alfred_kyc_status") or "pending",
+             "kyc_status": user_doc.get("kyc_status") or "pending",
+             "live_status": live_status}
+
+
+# ---------------------------------------------------------------------------
+# Real-KYC stub — shown when ALFRED_KYC_WIDGET_BASE isn't configured yet.
+# Surfaces the customerId + raw status fields so partners can run a KYC review
+# from Alfred's own dashboard while we finalise widget embedding.
+# ---------------------------------------------------------------------------
+@mock_router.get("/real-kyc-stub/{customer_id}", response_class=HTMLResponse)
+async def real_kyc_stub(customer_id: str, redirect: str = ""):
+    return HTMLResponse(f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Alfred KYC · {customer_id}</title>
+  <style>
+    body{{font-family:system-ui,sans-serif;background:#0B0F19;color:#E2E8F0;
+         display:grid;place-items:center;min-height:100vh;margin:0;padding:32px}}
+    .card{{background:#111827;border:1px solid #1F2937;border-radius:14px;
+           padding:28px;max-width:560px;width:100%}}
+    h1{{margin:0 0 8px;font-size:18px}}
+    .pill{{display:inline-block;background:#2563FF22;color:#60A5FA;padding:3px 10px;
+           border-radius:99px;font-size:10px;text-transform:uppercase;
+           letter-spacing:.12em;font-weight:700}}
+    code{{background:#1F2937;padding:2px 8px;border-radius:4px;font-size:11px}}
+    p{{font-size:13px;line-height:1.6;color:#94A3B8}}
+    a{{color:#60A5FA;text-decoration:none}}
+    a:hover{{text-decoration:underline}}
+  </style></head>
+<body><div class="card">
+  <span class="pill">Alfred · Real KYC sandbox</span>
+  <h1>Customer creado correctamente</h1>
+  <p>Tu Alfred customer ID:</p>
+  <p><code>{customer_id}</code></p>
+  <p>El compliance team de Alfred revisará y aprobará tu KYC dentro de las
+  próximas horas. Te llegará un email cuando esté aprobado. Esta pantalla se
+  actualiza automáticamente.</p>
+  <p>Configurá <code>ALFRED_KYC_WIDGET_BASE</code> para embeber el widget oficial.</p>
+  {('<p><a href="' + redirect + '">Volver al wizard</a></p>') if redirect else ''}
+</div></body></html>""")
 
 
 # ---------------------------------------------------------------------------

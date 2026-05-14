@@ -1,28 +1,30 @@
-"""Sprint 12.6 — Alfred Hybrid KYB + KYC adapter.
+"""Sprint 12.6 — Alfred Hybrid KYB + KYC adapter (LIVE PROBED).
 
-Alfred's KYC/KYB service lives on a SEPARATE host from the Penny payments
-API (per https://alfredpay.readme.io/docs/sending-money-with-alfred):
+Real endpoints (Penny restricted, base = ALFRED_API_BASE_*):
+    POST  /customers                       — create customer (returns customerId)
+        body: {email, type: "INDIVIDUAL"|"BUSINESS", country?, businessId?}
+    POST  /customers/{customerId}/kyc      — submit KYC data
+        body: {kycSubmission: { firstName, lastName, phoneNumber (E.164),
+               address, country (ISO-2: AR/MX/BR/CO/US/...), city, state,
+               zipCode, dateOfBirth (YYYY-MM-DD), dni, cuit (AR only,
+               must match dni), pep, ...country-specific extras }}
+    GET   /customers/{customerId}          — read customer (includes statusKyc)
 
-    Payments (Penny):  ALFRED_API_BASE_SANDBOX
-    KYC services:      ALFRED_KYC_BASE_SANDBOX
-                       (default https://api-dev-services.alfredpay.app/api/v1)
+The hosted KYC widget URL pattern (per Alfred docs "ON Ramp with KYC Iframe"):
+    {ALFRED_KYC_WIDGET_BASE}?customerId={cid}&apiKey={alfred_public_widget_key}
+We surface the widget URL we have configured via env (ALFRED_KYC_WIDGET_BASE);
+if unset, we fall back to the local mock page so the wizard never dead-ends.
 
-The Alfred KYC flow boils down to:
-
-    POST /third-party-service/my-info       -> {data.url}
-        The URL embeds a token used as `initial_transaction` in subsequent
-        calls AND as the public iframe URL for the hosted KYC widget.
-
-    POST /third-party-service/login-sof-kyc -> {data.token}
-        Bearer token authorising document uploads + status polling.
-
-    (Hosted iframe collects ID + selfie + docs; on completion Alfred POSTs
-     a webhook to ALFRED_WEBHOOK_SECRET-signed callback we configured at
-     `/v1/admin/ops/sync-alfred-webhook`.)
-
-This module exposes a two-mode adapter (real or mock) and persists the
-resulting ``alfred_customer_id`` so that subsequent `/onramp` calls can
-pass it as required by Penny (otherwise 422).
+Key live findings (probed 2026-02 against penny-api-restricted-dev):
+    * `type` MUST be uppercase enum: INDIVIDUAL / BUSINESS.
+    * BUSINESS creation in this sandbox tenant additionally requires `country`
+      AND the partner account to be configured for KYB — falls back to
+      creating an INDIVIDUAL customer for the org's primary contact.
+    * AR country code = "AR" (NOT "ARG"); MX = "MX", BR = "BR", CO = "CO", US = "US".
+    * AR mandatory: dateOfBirth (YYYY-MM-DD), zipCode, state, dni, cuit, pep
+      — cuit must contain the dni (Alfred checks: "CUIT contains XXXX, DNI is YYY").
+    * Phone must be E.164 with country trunk (+5411…, not +549…).
+    * Customer is usable as `customerId` in /onramp the moment statusKyc=APPROVED.
 """
 from __future__ import annotations
 
@@ -48,9 +50,9 @@ logger = logging.getLogger("prosper.alfred.kyc")
 class KycCustomerResponse:
     customer_id: str
     iframe_url: str
-    init_transaction: str   # passed as initial_transaction to /login-sof-kyc
+    init_transaction: str           # alias of customer_id for the wizard
     bearer_token: Optional[str]
-    status: str             # pending | in_review | approved | rejected
+    status: str                     # CREATED | PENDING | APPROVED | REJECTED (Alfred enum)
     mode: Literal["mock", "sandbox", "production"]
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -59,23 +61,48 @@ class KycCustomerResponse:
 # Helpers
 # ---------------------------------------------------------------------------
 def _kyc_mode() -> str:
-    """`ALFRED_KYC_MODE` overrides `ALFRED_MODE` for the KYC subsystem so we
-    can run Penny against sandbox while still using the mock KYC widget
-    (handy while finalising the production Alfred KYC contract)."""
     explicit = (os.environ.get("ALFRED_KYC_MODE") or "").strip().lower()
     if explicit in ("mock", "sandbox", "production"):
         return explicit
     return (os.environ.get("ALFRED_MODE") or "mock").lower()
 
 
-def _kyc_base(mode: str) -> str:
+def _base_url(mode: str) -> str:
+    """KYC endpoints live on the same Penny base used for payments."""
     if mode == "production":
         return os.environ.get(
-            "ALFRED_KYC_BASE_PRODUCTION",
-            "https://api-services.alfredpay.app/api/v1")
+            "ALFRED_API_BASE_PRODUCTION",
+            "https://penny-api-restricted.alfredpay.io/api/v1/third-party-service/penny")
     return os.environ.get(
-        "ALFRED_KYC_BASE_SANDBOX",
-        "https://api-dev-services.alfredpay.app/api/v1")
+        "ALFRED_API_BASE_SANDBOX",
+        "https://penny-api-restricted-dev.alfredpay.io/api/v1/third-party-service/penny")
+
+
+def _widget_base(mode: str) -> str:
+    if mode == "production":
+        return (os.environ.get("ALFRED_KYC_WIDGET_BASE_PRODUCTION", "")
+                  or os.environ.get("ALFRED_KYC_WIDGET_BASE", "")).rstrip("/")
+    return (os.environ.get("ALFRED_KYC_WIDGET_BASE_SANDBOX", "")
+              or os.environ.get("ALFRED_KYC_WIDGET_BASE", "")).rstrip("/")
+
+
+# Country mapping: our internal ISO-3 / free-form → Alfred ISO-2.
+_COUNTRY_MAP = {
+    "AR": "AR", "ARG": "AR", "ARGENTINA": "AR",
+    "BR": "BR", "BRA": "BR", "BRASIL": "BR", "BRAZIL": "BR",
+    "CL": "CL", "CHL": "CL", "CHILE": "CL",
+    "CO": "CO", "COL": "CO", "COLOMBIA": "CO",
+    "MX": "MX", "MEX": "MX", "MEXICO": "MX",
+    "PE": "PE", "PER": "PE", "PERU": "PE",
+    "UY": "UY", "URY": "UY", "URUGUAY": "UY",
+    "US": "US", "USA": "US", "USAUS": "US",
+}
+
+
+def _alfred_country(value: Optional[str]) -> str:
+    if not value:
+        return "AR"
+    return _COUNTRY_MAP.get(value.upper().strip(), value.upper()[:2])
 
 
 def _iso_now() -> str:
@@ -100,60 +127,73 @@ class AlfredKycAdapter(ABC):
                                    redirect_uri: str,
                                    ) -> KycCustomerResponse: ...
 
+    async def get_customer_status(self, customer_id: str) -> dict:
+        """Best-effort status read. Mocks return CREATED forever; real reads from Alfred."""
+        return {"statusKyc": "CREATED", "customerId": customer_id}
+
 
 # ---------------------------------------------------------------------------
-# Mock — used when no real KYC creds available or for fast E2E tests
+# Mock — local hosted-widget emulation
 # ---------------------------------------------------------------------------
 class MockAlfredKycAdapter(AlfredKycAdapter):
     mode: Literal["mock", "sandbox", "production"] = "mock"
 
-    async def create_kyb_customer(self, *, org_id, business, redirect_uri):
-        cid = "alfc_kyb_" + secrets.token_hex(6)
+    def _mock_iframe(self, cid: str, kind: str, redirect_uri: str) -> str:
         base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or os.environ.get(
             "APP_URL", "http://localhost:3000")
-        iframe_url = f"{base}/api/v1/alfred/mock-kyc/{cid}?kind=kyb&redirect={redirect_uri}"
+        return (f"{base}/api/v1/alfred/mock-kyc/{cid}"
+                f"?kind={kind}&redirect={redirect_uri}")
+
+    async def create_kyb_customer(self, *, org_id, business, redirect_uri):
+        cid = "alfc_kyb_" + secrets.token_hex(6)
         return KycCustomerResponse(
-            customer_id=cid, iframe_url=iframe_url,
+            customer_id=cid, iframe_url=self._mock_iframe(cid, "kyb", redirect_uri),
             init_transaction=cid, bearer_token=None,
             status="pending", mode="mock",
             raw={"business": business, "org_id": org_id})
 
     async def create_kyc_customer(self, *, user_id, personal, redirect_uri):
         cid = "alfc_kyc_" + secrets.token_hex(6)
-        base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or os.environ.get(
-            "APP_URL", "http://localhost:3000")
-        iframe_url = f"{base}/api/v1/alfred/mock-kyc/{cid}?kind=kyc&redirect={redirect_uri}"
         return KycCustomerResponse(
-            customer_id=cid, iframe_url=iframe_url,
+            customer_id=cid, iframe_url=self._mock_iframe(cid, "kyc", redirect_uri),
             init_transaction=cid, bearer_token=None,
             status="pending", mode="mock",
             raw={"personal": personal, "user_id": user_id})
 
+    async def get_customer_status(self, customer_id: str) -> dict:
+        return {"statusKyc": "CREATED", "customerId": customer_id, "mode": "mock"}
+
 
 # ---------------------------------------------------------------------------
-# Real — talks to Alfred KYC service
+# Real — talks to Alfred Penny restricted API
 # ---------------------------------------------------------------------------
 class RealAlfredKycAdapter(AlfredKycAdapter):
-    """Backed by Alfred's `api-dev-services.alfredpay.app` / `api-services` host."""
 
     def __init__(self, mode: Literal["sandbox", "production"]):
         self.mode = mode
         self._api_key = os.environ.get("ALFRED_API_KEY", "")
         self._api_secret = os.environ.get("ALFRED_API_SECRET", "")
-        self._base = _kyc_base(mode)
+        self._business_id = os.environ.get("ALFRED_BUSINESS_ID", "")
+        self._base = _base_url(mode)
+        self._widget_base = _widget_base(mode)
         if not self._api_key or not self._api_secret:
             raise AlfredError(
                 "ALFRED_API_KEY / ALFRED_API_SECRET empty — set ALFRED_KYC_MODE=mock")
-        logger.info("RealAlfredKycAdapter ready (mode=%s, base=%s)", mode, self._base)
+        logger.info("RealAlfredKycAdapter ready (mode=%s, base=%s, widget=%s)",
+                     mode, self._base, self._widget_base or "<none>")
 
+    # ------------------------------------------------------------------ HTTP
     def _headers(self) -> dict[str, str]:
-        return {
+        h = {
             "api-key":      self._api_key,
             "api-secret":   self._api_secret,
             "Content-Type": "application/json",
             "Accept":       "application/json",
             "User-Agent":   "prosper-backend/0.2 (+https://prosper.foundation)",
         }
+        if self._business_id:
+            h["business-id"] = self._business_id
+        return h
 
     async def _request(self, method: str, path: str,
                          json_body: dict | None = None) -> dict:
@@ -176,83 +216,116 @@ class RealAlfredKycAdapter(AlfredKycAdapter):
             raise AlfredError(
                 f"Alfred KYC returned non-JSON for {path}: {r.text[:200]!r}") from e
 
-    async def _init_my_info(self, *, type_: str, currency: str, user_handle: str,
-                              amount: float = 0) -> dict:
-        body = {
-            "type":     type_,
-            "balance":  amount,
-            "currency": currency,
-            "user":     user_handle,
-            "chain":    os.environ.get("ALFRED_DEFAULT_CHAIN", "stellar"),
-        }
-        return await self._request("POST", "/third-party-service/my-info",
-                                     json_body=body)
+    # ------------------------------------------------------------------ Helpers
+    def _build_widget_url(self, customer_id: str, redirect_uri: str) -> str:
+        """Build the hosted KYC widget URL.
 
-    async def _login_sof_kyc(self, *, init_transaction: str,
-                                personal: dict[str, Any]) -> dict:
-        body = {
-            "initial_transaction": init_transaction,
-            "phonenumber": personal.get("phone") or "+0000000000",
-            "email":       personal.get("email") or "",
-            "firstname":   personal.get("first_name") or "",
-            "lastname":    personal.get("last_name") or "",
-            "address":     personal.get("address") or "",
-            "country":     personal.get("country") or "ARG",
-            "city":        personal.get("city") or "",
-            "zipcode":     personal.get("zip") or 0,
-            "birthday":    personal.get("dob") or "",
-        }
-        return await self._request("POST", "/third-party-service/login-sof-kyc",
-                                     json_body=body)
+        Real Alfred provisions a JS-embeddable widget that takes the customerId
+        as a query param. If we don't have an ALFRED_KYC_WIDGET_BASE configured
+        we fall back to a local hosted page that lets the user paste a
+        Alfred-mode-redirect link (so the flow doesn't dead-end in dev).
+        """
+        if self._widget_base:
+            base = self._widget_base
+            sep = "&" if "?" in base else "?"
+            extra = f"&apiKey={self._api_key}" if "apiKey=" not in base else ""
+            return f"{base}{sep}customerId={customer_id}{extra}&redirectUrl={redirect_uri}"
+        # Dev fallback — local "real-but-no-widget" page
+        public = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or os.environ.get(
+            "APP_URL", "http://localhost:3000")
+        return f"{public}/api/v1/alfred/real-kyc-stub/{customer_id}?redirect={redirect_uri}"
 
-    async def _common(self, *, kind: Literal["kyb", "kyc"],
-                        identifier: str,
-                        personal: dict[str, Any],
-                        redirect_uri: str) -> KycCustomerResponse:
-        # 1) Init transaction — returns a URL whose last segment IS the token
-        #    AND the public iframe URL the user navigates to.
-        amount = float(personal.get("expected_amount") or 0)
-        my_info = await self._init_my_info(
-            type_=kind.upper(), currency="USDC",
-            user_handle=f"@{identifier}",
-            amount=amount)
-        url = (((my_info or {}).get("data") or {}).get("url") or "").strip()
-        if not url:
-            raise AlfredError(
-                "Alfred /my-info returned no URL — cannot start KYC")
-        init_tx = url.rstrip("/").split("/")[-1]
-
-        # 2) Exchange for a bearer token. Some Alfred environments accept
-        #    this call with partial personal data — failures here are non-fatal
-        #    because the user still completes the rest inside the iframe.
-        bearer: Optional[str] = None
+    async def _create_customer(self, *, email: str, type_: Literal["INDIVIDUAL", "BUSINESS"],
+                                 country: Optional[str] = None,
+                                 business_id: Optional[str] = None) -> dict:
+        body: dict[str, Any] = {"email": email, "type": type_}
+        # Live-probed: `/customers` accepts `country` ONLY when type=BUSINESS.
+        # For INDIVIDUAL the field is unknown (422 "Invalid parameter(s) country").
+        # The customer's country is captured later via `/customers/{id}/kyc`.
+        if country and type_ == "BUSINESS":
+            body["country"] = _alfred_country(country)
+        if business_id:
+            body["businessId"] = business_id
         try:
-            login = await self._login_sof_kyc(
-                init_transaction=init_tx, personal=personal)
-            bearer = (((login or {}).get("data") or {}).get("token")
-                      or login.get("token"))
+            return await self._request("POST", "/customers", json_body=body)
         except AlfredError as e:
-            logger.info("alfred-kyc login-sof-kyc skipped (%s) — iframe will collect data", e)
+            # Alfred 409 "Email already registered" — retry with a unique
+            # +tag email so the same internal reference can re-onboard. This
+            # is critical for dev/test loops; in production the idempotency
+            # check on the org doc prevents re-hitting Alfred at all.
+            if "111409" in str(e) or "already registered" in str(e).lower():
+                local, _, domain = email.partition("@")
+                ts = secrets.token_hex(3)
+                tagged_email = f"{local}+a{ts}@{domain or 'prosper.foundation'}"
+                body["email"] = tagged_email
+                logger.info("Alfred 111409 — retrying with tagged email %s", tagged_email)
+                return await self._request("POST", "/customers", json_body=body)
+            raise
 
-        return KycCustomerResponse(
-            customer_id=init_tx,
-            iframe_url=url,
-            init_transaction=init_tx,
-            bearer_token=bearer,
-            status="pending",
-            mode=self.mode,
-            raw={"my_info": my_info, "kind": kind, "redirect_uri": redirect_uri})
+    async def _submit_kyc(self, *, customer_id: str, submission: dict[str, Any]) -> dict:
+        return await self._request("POST", f"/customers/{customer_id}/kyc",
+                                     json_body={"kycSubmission": submission})
 
+    # ------------------------------------------------------------------ KYB
     async def create_kyb_customer(self, *, org_id, business, redirect_uri):
-        merged = {**(business or {}), **(business.get("primary_contact") or {})}
-        return await self._common(
-            kind="kyb", identifier=f"org-{org_id[-8:]}",
-            personal=merged, redirect_uri=redirect_uri)
+        """Create a BUSINESS customer; on tenant restriction, fall back to an
+        INDIVIDUAL customer for the org's primary contact (Hybrid mode)."""
+        primary = (business or {}).get("primary_contact") or {}
+        email = (business.get("primary_email")
+                  or primary.get("email")
+                  or f"kyb-{org_id[-8:]}@prosper.foundation").lower()
+        country = _alfred_country(business.get("country"))
 
+        cust: dict[str, Any] = {}
+        try:
+            cust = await self._create_customer(
+                email=email, type_="BUSINESS", country=country,
+                business_id=self._business_id or None)
+        except AlfredError as e:
+            logger.warning("KYB create_customer failed (%s) — falling back to INDIVIDUAL", e)
+            try:
+                cust = await self._create_customer(
+                    email=email, type_="INDIVIDUAL", country=country)
+            except AlfredError as e2:
+                raise AlfredError(f"Both BUSINESS and INDIVIDUAL fallback failed: {e2}") from e2
+
+        cid = str(cust.get("customerId") or "")
+        if not cid:
+            raise AlfredError(f"Alfred /customers returned no customerId: {cust}")
+
+        widget = self._build_widget_url(cid, redirect_uri)
+        return KycCustomerResponse(
+            customer_id=cid, iframe_url=widget,
+            init_transaction=cid, bearer_token=None,
+            status=str(cust.get("statusKyc") or "CREATED").lower(),
+            mode=self.mode,
+            raw={"customer": cust, "kind": "kyb", "fallback_individual":
+                  cust.get("type") == "INDIVIDUAL"})
+
+    # ------------------------------------------------------------------ KYC
     async def create_kyc_customer(self, *, user_id, personal, redirect_uri):
-        return await self._common(
-            kind="kyc", identifier=f"usr-{user_id[-8:]}",
-            personal=personal or {}, redirect_uri=redirect_uri)
+        personal = personal or {}
+        email = (personal.get("email")
+                  or f"kyc-{user_id[-8:]}@prosper.foundation").lower()
+        country = _alfred_country(personal.get("country") or personal.get("nationality"))
+
+        cust = await self._create_customer(
+            email=email, type_="INDIVIDUAL", country=country)
+        cid = str(cust.get("customerId") or "")
+        if not cid:
+            raise AlfredError(f"Alfred /customers returned no customerId: {cust}")
+
+        widget = self._build_widget_url(cid, redirect_uri)
+        return KycCustomerResponse(
+            customer_id=cid, iframe_url=widget,
+            init_transaction=cid, bearer_token=None,
+            status=str(cust.get("statusKyc") or "CREATED").lower(),
+            mode=self.mode,
+            raw={"customer": cust, "kind": "kyc"})
+
+    # ------------------------------------------------------------------ Status
+    async def get_customer_status(self, customer_id: str) -> dict:
+        return await self._request("GET", f"/customers/{customer_id}")
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +355,5 @@ def current_kyc_mode() -> str:
 
 
 def reset_kyc_adapter() -> None:
-    """Test/admin helper to drop the cached adapter (e.g. after env flip)."""
     global _singleton
     _singleton = None

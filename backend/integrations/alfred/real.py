@@ -183,7 +183,9 @@ class RealAlfredAdapter(AlfredAdapter):
         cust_id   = (customer_id
                       or os.environ.get("ALFRED_DEFAULT_CUSTOMER_ID")
                       or user_id)
-        # Optional kwargs forwarded via raw env / per-org defaults
+        # Penny endpoints reject unknown parameters. `callbackUrl` and
+        # `externalReference` were probed live → 422. Webhooks are configured
+        # globally via `PUT /webhooks/url/config` (cf. admin/ops/sync-alfred-webhook).
         body = {
             "quoteId":           quote_id,
             "customerId":        cust_id,
@@ -193,8 +195,6 @@ class RealAlfredAdapter(AlfredAdapter):
             "chain":             os.environ.get("ALFRED_DEFAULT_CHAIN", "XLM"),
             "depositAddress":    dest_addr,
             "paymentMethodType": _alfred_payment_method(payment_method),
-            "callbackUrl":       callback_url,
-            "externalReference": f"prosper:{org_id}:{user_id}",
         }
         data = await self._request("POST", "/onramp", json_body=body)
         # Penny wraps onramp responses in {transaction, fiatPaymentInstructions}.
@@ -227,7 +227,6 @@ class RealAlfredAdapter(AlfredAdapter):
             "chain":         os.environ.get("ALFRED_DEFAULT_CHAIN", "XLM"),
             "fiatAccountId": bank_account.get("fiat_account_id") or bank_account.get("id"),
             "originAddress": bank_account.get("origin_address", ""),
-            "externalReference": f"prosper:{org_id}:{user_id}",
         }
         data = await self._request("POST", "/offramp", json_body=body)
         # Offramp Penny responses are flat (no wrapper).

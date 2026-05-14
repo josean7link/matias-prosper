@@ -399,3 +399,34 @@ Real Prosper API (`https://apidev.protocol-prosper.io`) integrada en modo `devel
 **Tests**: 10/10 pytest pass (`test_sprint12_6_alfred_kyc.py`). E2E mock validado live: KYB iniciado → approve → org.kyb_status='approved' → Prosper wallet provisionada (`stellar_address: GDJV4…`). Frontend Step 6 renderiza iframe + status badge correctamente.
 
 **Para activar Alfred KYC live**: flipear `ALFRED_KYC_MODE=sandbox` en `.env` y confirmar URLs base (default ya correcto).
+
+## ✅ Sprint 12.6.1 — Alfred KYC LIVE Sandbox (2026-02 / cont.)
+
+`ALFRED_KYC_MODE` flipped from `mock` → `sandbox`. Real Alfred sandbox endpoints discovered via live probing:
+
+- **Base host**: `penny-api-restricted-dev.alfredpay.io` (same as Penny payments — no separate `api-dev-services` subdomain).
+- **`POST /customers`**: `{email, type: "INDIVIDUAL"|"BUSINESS", country?, businessId?}`. `type` MUST be UPPERCASE. `country` REQUIRED for BUSINESS, REJECTED for INDIVIDUAL. Country uses ISO-2 (`AR`/`MX`/`BR`/`CO`/`US`...).
+- **`POST /customers/{cid}/kyc`**: `{kycSubmission: {firstName, lastName, phoneNumber (E.164), address, country (ISO-2), city, state, zipCode, dateOfBirth, dni, cuit (AR — must match dni), pep, ...country-specific}}`. Argentina also requires the CUIT to embed the DNI digits.
+- **`GET /customers/{cid}`**: returns `{statusKyc: "CREATED"|"PENDING"|"APPROVED"|"REJECTED", ...}`. Status starts `CREATED` and advances as Alfred reviews documents.
+
+**Onramp regression fix**: `RealAlfredAdapter.create_onramp_order` no longer sends `callbackUrl` / `externalReference` (rejected as unknown params by live Alfred). Webhook URL is configured globally via `PUT /webhooks/url/config`. Same fix applied to `create_offramp_order`.
+
+**Hybrid fallback**: `RealAlfredKycAdapter.create_kyb_customer` first attempts type=BUSINESS; if the tenant rejects KYB (e.g. country unavailable), falls back to creating an INDIVIDUAL customer using the org's primary contact email — preserves the unified `customerId` flow while we finalize Alfred KYB contract.
+
+**Email collision handling**: Alfred 409 "Email already registered" is auto-retried with a `+a{tag}` suffix (preserves the same mailbox). Prevents dev/test loops from being blocked by previously-onboarded emails.
+
+**New env vars**:
+- `ALFRED_KYC_MODE=sandbox`
+- `ALFRED_KYC_WIDGET_BASE` (optional) — when set, the wizard embeds Alfred's hosted widget directly. When unset, falls back to `/api/v1/alfred/real-kyc-stub/{customer_id}` (informational page with the customer id + redirect).
+
+**New endpoint**:
+- `GET /api/v1/alfred/real-kyc-stub/{customer_id}` — fallback hosted page when widget URL not configured.
+
+**Live evidence**:
+- Created real Alfred customer `c257f1bb-ded3-498b-aa05-80ee06a6b124` for org_seed_alemany.
+- Submitted real KYC for another customer `143c994b-...` → got `submissionId: 6b63ccea-...` from Alfred.
+- `/client/onramp/orders` now passes the real `customerId` correctly: error changed from 422 "customerId invalid" → 409 "Customer KYC incomplete" (expected gating — customer must be APPROVED by Alfred compliance before onramping). Confirms the 5% gap from Sprint 12.5 is **closed**.
+
+**Tests**: `test_sprint12_6_alfred_kyc.py` re-modularised with `@SKIP_IF_NOT_MOCK` / `@SKIP_IF_MOCK` decorators. 6 passed + 6 skipped in sandbox mode; 8 passed + 4 skipped in mock mode (same code, flip `ALFRED_KYC_MODE` to swap which set runs).
+
+**Pending for full prod**: configure `ALFRED_KYC_WIDGET_BASE` once Alfred shares the widget origin URL (currently the real-kyc-stub fallback is acceptable for dev/UAT).
