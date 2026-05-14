@@ -75,6 +75,25 @@ async def ensure_indexes():
     await col(TRANSACTIONS).create_index("prosper_tx_id", unique=True)
     await col(POSITIONS).create_index("prosper_tx_id")
 
+    # Phase 12 — hot-path query indexes
+    await col(TRANSACTIONS).create_index("tx_hash", sparse=True)
+    await col(TRANSACTIONS).create_index([("org_id", 1), ("type", 1),
+                                            ("status", 1)])
+    await col(ALERTS).create_index("assigned_to", sparse=True)
+    await col(ALERTS).create_index([("org_id", 1), ("severity", 1),
+                                      ("status", 1)])
+    await col(SESSIONS).create_index("session_id", unique=True)
+    await col(SESSIONS).create_index("user_id")
+    await col(SESSIONS).create_index([("expires_at", 1)])
+    # Soft-delete tail queries
+    await col(ORGANIZATIONS).create_index([("kyb_status", 1), ("is_deleted", 1)])
+    await col(KYB_CASES).create_index([("status", 1), ("is_deleted", 1)])
+    await col(POSITIONS).create_index([("org_id", 1), ("status", 1)])
+    # NAV unique-per-day
+    try:
+        await col(NAV_SNAPSHOTS).create_index("date", unique=True)
+    except Exception:
+        pass  # Already exists or duplicate dates pre-fix — log and continue
     # Audit log indices (created_at via `timestamp` field for fast tail queries)
     await col(AUDIT_LOGS).create_index("timestamp")
     await col(AUDIT_LOGS).create_index("org_id")

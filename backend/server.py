@@ -6,7 +6,7 @@ from typing import Optional
 from pathlib import Path
 
 from fastapi import FastAPI, APIRouter, HTTPException, Response, Request, Depends, Header
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 import httpx
@@ -48,6 +48,7 @@ from routes.client_alfred import (
 from routes.client_invest import router as client_invest_router
 from routes.client_developer import router as client_developer_router
 from routes.client_profile import router as client_profile_router
+from routes.admin_ops import router as admin_ops_router, status_router as ops_status_router
 from routes.webhooks_aiprise import router as aiprise_webhooks_router
 
 logging.basicConfig(level=logging.INFO)
@@ -63,6 +64,35 @@ RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 RESEND_FROM = os.environ.get("RESEND_FROM", "onboarding@resend.dev")
 
 app = FastAPI(title="Prosper Platform API", version="0.2.0")
+
+# ---------------------------------------------------------------------------
+# Rate limiting — lightweight per-IP token-bucket. In-process (single worker).
+# Disable in tests via PROSPER_DISABLE_RATELIMIT=1.
+# ---------------------------------------------------------------------------
+_rate_buckets: dict[tuple[str, str], list[float]] = {}
+
+
+def rate_limit(request: Request, *, scope: str, per_min: int) -> None:
+    """Raise HTTPException 429 if `scope` from this IP exceeds `per_min`.
+
+    Evaluated per call so tests can flip `PROSPER_DISABLE_RATELIMIT` at
+    runtime without restarting the backend.
+    """
+    if os.environ.get("PROSPER_DISABLE_RATELIMIT") == "1":
+        return
+    now = datetime.now(timezone.utc).timestamp()
+    ip = request.client.host if request.client else "anon"
+    key = (scope, ip)
+    window = _rate_buckets.setdefault(key, [])
+    # Drop entries older than 60s
+    cutoff = now - 60
+    while window and window[0] < cutoff:
+        window.pop(0)
+    if len(window) >= per_min:
+        raise HTTPException(429, f"Demasiadas requests — máx {per_min}/min en {scope}")
+    window.append(now)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
@@ -70,6 +100,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Security headers — HSTS / Referrer-Policy / X-Content-Type-Options
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("Strict-Transport-Security",
+                                 "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=()")
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Sentry hook (mocked-friendly — only inits if SENTRY_DSN configured)
+# ---------------------------------------------------------------------------
+_SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        sentry_sdk.init(dsn=_SENTRY_DSN,
+                         traces_sample_rate=0.1,
+                         environment=os.environ.get("PROSPER_ENV", "preview"),
+                         integrations=[FastApiIntegration()])
+    except Exception:  # pragma: no cover
+        pass
 redis_client: aioredis.Redis | None = None
 
 
@@ -173,7 +233,8 @@ class TokenIn(BaseModel):
 
 
 @v1.post("/auth/passwordless-login")
-async def passwordless_login(body: LoginIn):
+async def passwordless_login(request: Request, body: LoginIn):
+    rate_limit(request, scope="passwordless-login", per_min=10)
     otp = f"{secrets.randbelow(10000):04d}"
     cont = secrets.token_urlsafe(24)
     await _otp_put(cont, otp, body.email.lower())
@@ -196,7 +257,8 @@ def _domain_allowed(email: str, allowlist: list[str]) -> bool:
 
 
 @v1.post("/auth/passwordless-token")
-async def passwordless_token(body: TokenIn, response: Response, request: Request):
+async def passwordless_token(request: Request, body: TokenIn, response: Response):
+    rate_limit(request, scope="passwordless-token", per_min=30)
     stored = await _otp_pop(body.code)
     if not stored:
         raise HTTPException(401, "Code expired or already used")
@@ -472,5 +534,7 @@ api.include_router(alfred_mock_router, prefix="/v1")
 api.include_router(client_invest_router, prefix="/v1")
 api.include_router(client_developer_router, prefix="/v1")
 api.include_router(client_profile_router, prefix="/v1")
+api.include_router(admin_ops_router, prefix="/v1")
+api.include_router(ops_status_router, prefix="/v1")
 api.include_router(aiprise_webhooks_router, prefix="/v1")
 app.include_router(api)

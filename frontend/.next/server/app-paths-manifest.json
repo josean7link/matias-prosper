@@ -1,7 +1,10 @@
 {
-  "/login/page": "app/login/page.js",
+  "/status/page": "app/status/page.js",
+  "/terms/page": "app/terms/page.js",
+  "/privacy/page": "app/privacy/page.js",
   "/client/api-keys/page": "app/client/api-keys/page.js",
   "/client/widget/page": "app/client/widget/page.js",
   "/client/coming-soon/page": "app/client/coming-soon/page.js",
-  "/client/profile/page": "app/client/profile/page.js"
+  "/client/profile/page": "app/client/profile/page.js",
+  "/admin/clients/page": "app/admin/clients/page.js"
 }

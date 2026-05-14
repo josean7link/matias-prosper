@@ -1,9 +1,11 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { PageHeader, Badge, DataTable, type Column } from "@prosper/ui";
-import { Plus, Search, AlertCircle, RefreshCw, Users, Pause } from "lucide-react";
+import { Plus, Search, AlertCircle, RefreshCw, Users, Pause, Sparkles } from "lucide-react";
 import { useClients, type ClientRow } from "@/lib/admin-clients";
+import { api } from "@/lib/api";
 import { cn, fmtMoney, fmtDate } from "@/lib/utils";
 
 const KYB_TONE: Record<string, "success" | "info" | "warning" | "danger" | "auto"> = {
@@ -88,11 +90,31 @@ export default function ClientsListPage() {
         title="Clientes"
         subtitle="Organizaciones registradas en Prosper · onboarding, accesos, API keys, webhooks."
         actions={
-          <Link href="/admin/clients/new"
-            data-testid="clients-new-btn"
-            className="prosper-btn-primary h-9 text-xs gap-1.5">
-            <Plus size={13}/> Nuevo cliente
-          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              data-testid="clients-seed-demo-btn"
+              onClick={async () => {
+                if (!window.confirm("Crear un cliente demo con datos seedeados (KYB approved + 30d de historia)?")) return;
+                try {
+                  const r = await api<{ ok: true; org_id: string; legal_name?: string }>(
+                    "/v1/admin/ops/seed-demo-client",
+                    { method: "POST",
+                      body: JSON.stringify({ auto_approve: true, seed_history: true }) });
+                  toast.success(`Demo creado · ${r.org_id}`);
+                  swr.mutate();
+                } catch (err) {
+                  toast.error((err as Error).message || "Error al crear demo");
+                }
+              }}
+              className="prosper-btn-ghost h-9 text-xs gap-1.5">
+              <Sparkles size={13}/> Crear demo seedeado
+            </button>
+            <Link href="/admin/clients/new"
+              data-testid="clients-new-btn"
+              className="prosper-btn-primary h-9 text-xs gap-1.5">
+              <Plus size={13}/> Nuevo cliente
+            </Link>
+          </div>
         }
       />
 
