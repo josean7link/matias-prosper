@@ -1,12 +1,17 @@
-"""Phase 1 — JWT issuance + decoding, current-user resolver, role + scope guards."""
+"""Phase 1 — JWT issuance + decoding, current-user resolver, role + scope guards.
+
+Sprint 11B adds session tracking: each issued JWT also creates a `sessions`
+document and embeds a `jti` claim. `get_current_user` validates that the
+session is still active (lenient for legacy tokens without `jti`).
+"""
 from __future__ import annotations
-import os
+import os, secrets as _s
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Set, Tuple
 import jwt
 from fastapi import Depends, HTTPException, Request
 
-from db import col, USERS, ORGANIZATIONS
+from db import col, USERS, ORGANIZATIONS, SESSIONS
 from roles import Role, INTERNAL_ROLES, is_internal
 from models import utc_now
 
@@ -18,7 +23,8 @@ JWT_TTL_SECONDS = 7 * 24 * 3600
 # ---------------------------------------------------------------------------
 # Token mint / verify
 # ---------------------------------------------------------------------------
-def make_jwt(*, user_id: str, email: str, role: Role, org_id: Optional[str]) -> str:
+def make_jwt(*, user_id: str, email: str, role: Role, org_id: Optional[str],
+              jti: Optional[str] = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
@@ -28,7 +34,64 @@ def make_jwt(*, user_id: str, email: str, role: Role, org_id: Optional[str]) -> 
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(seconds=JWT_TTL_SECONDS)).timestamp()),
     }
+    if jti:
+        payload["jti"] = jti
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+async def mint_session_token(
+    *, user_id: str, email: str, role: Role, org_id: Optional[str],
+    request: Optional[Request] = None,
+    label: Optional[str] = None,
+) -> str:
+    """Create a session record + return a JWT carrying its `jti`.
+
+    Used by login flows (`/auth/passwordless-token`, `/auth/dev-login`). The
+    session is what gets listed/revoked in `/v1/client/sessions`.
+    """
+    jti = "ses_" + _s.token_hex(10)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    expires_at = (datetime.now(timezone.utc)
+                   + timedelta(seconds=JWT_TTL_SECONDS)).isoformat()
+    ip = request.client.host if (request and request.client) else None
+    ua = request.headers.get("User-Agent") if request else None
+    session_doc = {
+        "session_id":   jti,
+        "user_id":      user_id,
+        "org_id":       org_id,
+        "email":        email,
+        "ip":           ip,
+        "user_agent":   ua or "",
+        "label":        label or _parse_ua_label(ua),
+        "created_at":   now_iso,
+        "last_seen_at": now_iso,
+        "expires_at":   expires_at,
+        "revoked":      False,
+        "is_deleted":   False,
+    }
+    await col(SESSIONS).insert_one(dict(session_doc))
+    return make_jwt(user_id=user_id, email=email, role=role,
+                    org_id=org_id, jti=jti)
+
+
+def _parse_ua_label(ua: Optional[str]) -> str:
+    """Best-effort device label from User-Agent — no full parser."""
+    if not ua:
+        return "Desconocido"
+    s = ua.lower()
+    browser = "Browser"
+    for key, label in [("edg/", "Edge"), ("chrome/", "Chrome"),
+                        ("firefox/", "Firefox"), ("safari/", "Safari")]:
+        if key in s and not (key == "safari/" and "chrome/" in s):
+            browser = label; break
+    os_name = "Desktop"
+    if "iphone" in s or "ios" in s:        os_name = "iPhone"
+    elif "ipad" in s:                       os_name = "iPad"
+    elif "android" in s:                    os_name = "Android"
+    elif "mac os" in s or "macintosh" in s: os_name = "macOS"
+    elif "windows" in s:                    os_name = "Windows"
+    elif "linux" in s:                      os_name = "Linux"
+    return f"{browser} · {os_name}"
 
 
 def parse_jwt(token: str) -> dict:
@@ -45,7 +108,7 @@ class CurrentUser:
     """Lightweight DTO returned by `get_current_user`."""
     def __init__(self, *, user_id: str, email: str, role: Role, org_id: Optional[str],
                  acting_as_org: Optional[str] = None, ip: Optional[str] = None,
-                 user_agent: Optional[str] = None):
+                 user_agent: Optional[str] = None, jti: Optional[str] = None):
         self.user_id = user_id
         self.email = email
         self.role = role
@@ -53,6 +116,7 @@ class CurrentUser:
         self.acting_as_org = acting_as_org  # internal impersonation header
         self.ip = ip
         self.user_agent = user_agent
+        self.jti = jti  # session id (None for legacy tokens)
 
     @property
     def scope_org_id(self) -> Optional[str]:
@@ -89,6 +153,20 @@ async def get_current_user(request: Request) -> CurrentUser:
     if acting and not is_internal(role):
         raise HTTPException(403, "Only internal staff can use X-Acting-As-Org")
 
+    # 3) If the token has a session id, ensure the session is still active.
+    jti = payload.get("jti")
+    if jti:
+        sess = await col(SESSIONS).find_one(
+            {"session_id": jti, "is_deleted": False}, {"_id": 0, "revoked": 1})
+        if not sess:
+            raise HTTPException(401, "Session not found")
+        if sess.get("revoked"):
+            raise HTTPException(401, "Session revoked")
+        # Lazy last_seen_at update — best effort, no await chain on hot path
+        await col(SESSIONS).update_one(
+            {"session_id": jti},
+            {"$set": {"last_seen_at": datetime.now(timezone.utc).isoformat()}})
+
     return CurrentUser(
         user_id=payload["sub"],
         email=payload.get("email", ""),
@@ -97,6 +175,7 @@ async def get_current_user(request: Request) -> CurrentUser:
         acting_as_org=acting,
         ip=(request.client.host if request.client else None),
         user_agent=request.headers.get("User-Agent"),
+        jti=jti,
     )
 
 

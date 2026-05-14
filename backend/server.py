@@ -22,7 +22,8 @@ from db import (
 from models import utc_now, Organization
 from roles import Role, is_internal
 from auth import (
-    CurrentUser, get_current_user, make_jwt, requires_role, org_scoped, assert_can_read,
+    CurrentUser, get_current_user, make_jwt, mint_session_token,
+    requires_role, org_scoped, assert_can_read,
 )
 from audit import log_action, audited
 from seed import seed_phase1
@@ -46,6 +47,7 @@ from routes.client_alfred import (
 )
 from routes.client_invest import router as client_invest_router
 from routes.client_developer import router as client_developer_router
+from routes.client_profile import router as client_profile_router
 from routes.webhooks_aiprise import router as aiprise_webhooks_router
 
 logging.basicConfig(level=logging.INFO)
@@ -231,15 +233,33 @@ async def passwordless_token(body: TokenIn, response: Response, request: Request
                                 {"$set": {"last_login_at": utc_now(), "updated_at": utc_now()}})
 
     role = Role(user_doc["role"])
-    access = make_jwt(user_id=user_doc["user_id"], email=email, role=role,
-                      org_id=user_doc.get("org_id"))
+    access = await mint_session_token(
+        user_id=user_doc["user_id"], email=email, role=role,
+        org_id=user_doc.get("org_id"), request=request)
     response.set_cookie("prosper_session", access, httponly=True, secure=COOKIE_SECURE,
                         samesite="lax", path="/", max_age=7*24*3600)
     return {"accessToken": access}
 
 
 @v1.post("/auth/logout")
-async def logout(response: Response):
+async def logout(response: Response, request: Request):
+    # Revoke the current session (if any) before deleting the cookie so other
+    # tabs / API calls reusing the JWT fail with 401 instantly.
+    from auth import parse_jwt
+    from db import SESSIONS
+    token = request.cookies.get("prosper_session")
+    if token:
+        try:
+            payload = parse_jwt(token)
+            jti = payload.get("jti")
+            if jti:
+                await col(SESSIONS).update_one(
+                    {"session_id": jti},
+                    {"$set": {"revoked": True,
+                                "revoked_at": utc_now(),
+                                "revoke_reason": "logout"}})
+        except Exception:
+            pass
     response.delete_cookie("prosper_session", path="/")
     return {"ok": True}
 
@@ -250,7 +270,7 @@ async def logout(response: Response):
 # Sets the prosper_session cookie and 302s to `next`. Bypasses all SPA cache.
 # ---------------------------------------------------------------------------
 @v1.get("/auth/dev-login")
-async def dev_login(email: str, next: str = "/admin"):
+async def dev_login(email: str, request: Request, next: str = "/admin"):
     if RESEND_API_KEY:
         raise HTTPException(404, "Not found")  # disable in production silently
     email = email.lower().strip()
@@ -279,8 +299,9 @@ async def dev_login(email: str, next: str = "/admin"):
         {"$set": {"last_login_at": utc_now(), "updated_at": utc_now()}})
 
     role = Role(user_doc["role"])
-    access = make_jwt(user_id=user_doc["user_id"], email=email, role=role,
-                      org_id=user_doc.get("org_id"))
+    access = await mint_session_token(
+        user_id=user_doc["user_id"], email=email, role=role,
+        org_id=user_doc.get("org_id"), request=request, label="Dev magic link")
     # Sanitize the `next` param so this can't be used as an open redirect
     safe_next = next if next.startswith("/") else "/admin"
     resp = RedirectResponse(url=safe_next, status_code=303)
@@ -450,5 +471,6 @@ api.include_router(alfred_webhook_router, prefix="/v1")
 api.include_router(alfred_mock_router, prefix="/v1")
 api.include_router(client_invest_router, prefix="/v1")
 api.include_router(client_developer_router, prefix="/v1")
+api.include_router(client_profile_router, prefix="/v1")
 api.include_router(aiprise_webhooks_router, prefix="/v1")
 app.include_router(api)
