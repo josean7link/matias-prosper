@@ -6,6 +6,7 @@ import {
   Home, Briefcase, ChartBar, ShieldCheck, Users, LayoutDashboard,
   ArrowDownUp, TrendingUp, Coins, User, Sparkles, Plug,
   ChevronLeft, ChevronRight, LogOut, Moon, Sun,
+  KeyRound, Webhook, Code, Package, Wand2,
 } from "lucide-react";
 import { ProsperLogo } from "./ProsperLogo";
 import { SandboxBanner } from "./SandboxBanner";
@@ -34,8 +35,13 @@ const CLIENT_NAV: NavItem[] = [
   { href: "/client/onramp",      label: "Cargar dinero",     icon: ArrowDownUp },
   { href: "/client/offramp",     label: "Retirar",           icon: ArrowDownUp },
   { href: "/client/transactions",label: "Movimientos",       icon: Coins },
+  { href: "/client/api-keys",    label: "API Keys",          icon: KeyRound },
+  { href: "/client/webhooks",    label: "Webhooks",          icon: Webhook },
+  { href: "/client/developers",  label: "Developers",        icon: Code },
+  { href: "/client/sdk",         label: "SDK",               icon: Package },
+  { href: "/client/widget",      label: "Widget",            icon: Wand2 },
   { href: "/client/profile",     label: "Perfil",            icon: User },
-  { href: "/client/services",    label: "Servicios futuros", icon: Sparkles, soon: true },
+  { href: "/client/coming-soon", label: "Próximamente",      icon: Sparkles },
 ];
 
 export function AppShell({

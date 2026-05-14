@@ -33,6 +33,8 @@ KYT_ALERTS       = "kyt_alerts"
 RISK_SCORES      = "risk_scores"
 WATCHLIST        = "watchlist_entries"
 LIMITS_HISTORY   = "limits_history"
+# Phase 11
+FEATURE_INTEREST = "feature_interest"
 
 _client: AsyncIOMotorClient | None = None
 

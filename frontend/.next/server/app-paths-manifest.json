@@ -1,7 +1,10 @@
 {
+  "/login/page": "app/login/page.js",
+  "/client/api-keys/page": "app/client/api-keys/page.js",
+  "/client/widget/page": "app/client/widget/page.js",
   "/client/page": "app/client/page.js",
-  "/client/onramp/page": "app/client/onramp/page.js",
-  "/client/offramp/page": "app/client/offramp/page.js",
-  "/client/profile/page": "app/client/profile/page.js",
-  "/client/onramp/[id]/success/page": "app/client/onramp/[id]/success/page.js"
+  "/client/webhooks/page": "app/client/webhooks/page.js",
+  "/client/developers/page": "app/client/developers/page.js",
+  "/client/sdk/page": "app/client/sdk/page.js",
+  "/client/coming-soon/page": "app/client/coming-soon/page.js"
 }
