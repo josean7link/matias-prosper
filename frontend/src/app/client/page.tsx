@@ -76,7 +76,7 @@ export default function ClientDashboardPage() {
           testid="action-deposit"
         />
         <ActionBtn
-          href="/client/investments"
+          href="/client/invest"
           icon={<Coins size={16} />}
           label="Invertir"
           subtitle="Comprá Prosper Yield Token"

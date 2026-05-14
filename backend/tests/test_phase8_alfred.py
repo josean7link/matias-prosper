@@ -71,16 +71,17 @@ def test_onramp_blocked_when_kyb_not_approved():
 
 
 def test_onramp_caps_validation():
-    """Alemany has subscribe_daily_cap_usd=250_000. Try to onramp 1M USD-equivalent."""
+    """Alemany has subscribe_daily_cap_usd ≈ 1M. Try to onramp 10M USDC-equivalent."""
     s = _client_session()
-    # 1B ARS ≈ 1M USDC (far above the 250k daily cap)
+    # 10B ARS ≈ 10M USDC (well above any cap)
+    huge = 10_000_000_000
     q = s.post(f"{API}/client/onramp/quote",
-               json={"source_currency": "ARS", "source_amount": 1_000_000_000},
+               json={"source_currency": "ARS", "source_amount": huge},
                timeout=10).json()
     r = s.post(f"{API}/client/onramp/orders",
                json={"quote_id": q["quote_id"],
                      "source_currency": "ARS",
-                     "source_amount": 1_000_000_000,
+                     "source_amount": huge,
                      "payment_method": "transfer"}, timeout=10)
     assert r.status_code == 400, r.text
     assert "cap" in r.text.lower()

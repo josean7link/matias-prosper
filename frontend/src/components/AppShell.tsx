@@ -29,8 +29,10 @@ const ADMIN_NAV: NavItem[] = [
 
 const CLIENT_NAV: NavItem[] = [
   { href: "/client",             label: "Dashboard",         icon: LayoutDashboard },
+  { href: "/client/invest",      label: "Invertir",          icon: TrendingUp },
+  { href: "/client/investments", label: "Posiciones",        icon: Coins },
   { href: "/client/onramp",      label: "Cargar dinero",     icon: ArrowDownUp },
-  { href: "/client/offramp",     label: "Retirar",           icon: TrendingUp },
+  { href: "/client/offramp",     label: "Retirar",           icon: ArrowDownUp },
   { href: "/client/transactions",label: "Movimientos",       icon: Coins },
   { href: "/client/profile",     label: "Perfil",            icon: User },
   { href: "/client/services",    label: "Servicios futuros", icon: Sparkles, soon: true },

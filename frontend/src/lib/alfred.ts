@@ -88,7 +88,14 @@ export const PAYMENT_METHODS = [
 export const fetcher = (p: string) => api(p);
 
 export function useOnrampOrder(id: string | null) {
-  return useSWR<{ order: OnrampOrder }>(
+  return useSWR<{
+    order: OnrampOrder;
+    subscribe_tx?: { tx_id: string; tx_hash?: string; status: string;
+                     amount: number; ledger?: string;
+                     metadata?: { product_id?: string; apr_bps?: number } };
+    position?: { position_id: string; product_id: string; principal_usd: number;
+                  apr_bps: number; maturity?: string | null; status: string };
+  }>(
     id ? `/v1/client/onramp/orders/${id}` : null,
     fetcher,
     { refreshInterval: (data) => (data?.order?.status === "pending" ? 5000 : 0) }

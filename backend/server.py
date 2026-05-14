@@ -44,6 +44,7 @@ from routes.client_alfred import (
     webhook_router as alfred_webhook_router,
     mock_router as alfred_mock_router,
 )
+from routes.client_invest import router as client_invest_router
 from routes.webhooks_aiprise import router as aiprise_webhooks_router
 
 logging.basicConfig(level=logging.INFO)
@@ -90,6 +91,10 @@ async def startup():
     logger.info(f"Fee breakdown backfill: {fees_back}")
     compl = await seed_compliance()
     logger.info(f"Compliance seed: {compl}")
+    from routes.client_invest import ensure_products
+    await ensure_products()
+    from jobs.accrual import start_scheduler
+    start_scheduler()
 
 
 @app.on_event("shutdown")
@@ -442,5 +447,6 @@ api.include_router(apply_public_router, prefix="/v1")
 api.include_router(client_alfred_router, prefix="/v1")
 api.include_router(alfred_webhook_router, prefix="/v1")
 api.include_router(alfred_mock_router, prefix="/v1")
+api.include_router(client_invest_router, prefix="/v1")
 api.include_router(aiprise_webhooks_router, prefix="/v1")
 app.include_router(api)

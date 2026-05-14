@@ -258,7 +258,16 @@ async def get_onramp(onramp_id: str,
         except AlfredError as e:
             logger.warning("get_order_status failed: %s", e)
 
-    return {"order": order}
+    # Phase 9: include the auto-buy result (transaction + position) when present.
+    subscribe_tx = await col(TRANSACTIONS).find_one(
+        {"related_onramp_id": onramp_id, "type": "subscribe"},
+        {"_id": 0})
+    position = None
+    if subscribe_tx and subscribe_tx.get("related_position_id"):
+        position = await col("positions").find_one(
+            {"position_id": subscribe_tx["related_position_id"]}, {"_id": 0})
+
+    return {"order": order, "subscribe_tx": subscribe_tx, "position": position}
 
 
 async def _ensure_tx_for_onramp(org_id: str, order: dict, st) -> None:
@@ -560,6 +569,15 @@ async def alfred_webhook(request: Request):
             await col(OFFRAMP_ORDERS).update_one(
                 {"alfred_id": alfred_id},
                 {"$set": {"status": new_status, "updated_at": _iso_now()}})
+        elif new_status == "confirmed":
+            # Phase 9 — fire automatic Prosper buy
+            updated = await col(ONRAMP_ORDERS).find_one({"alfred_id": alfred_id}, {"_id": 0})
+            if updated:
+                from routes.client_invest import trigger_buy_after_onramp
+                try:
+                    await trigger_buy_after_onramp(updated)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("post-onramp buy failed: %s", e)
 
     await log_action(actor=None, action="alfred.webhook.received",
                      resource_type="webhook_event", resource_id=event_id,
@@ -676,6 +694,14 @@ async def mock_settle(alfred_id: str, force_failure: int = 0):
                     coelsa_id = order.get("coelsa_id")
                     tx_hash = order.get("tx_hash")
                 await _ensure_tx_for_onramp(ramp["org_id"], ramp, _St())
+                # Phase 9: trigger automatic Prosper buy
+                from routes.client_invest import trigger_buy_after_onramp
+                refreshed = await col(ONRAMP_ORDERS).find_one(
+                    {"alfred_id": alfred_id}, {"_id": 0})
+                try:
+                    await trigger_buy_after_onramp(refreshed)
+                except Exception as e:  # noqa: BLE001
+                    logger.exception("post-onramp buy failed: %s", e)
     else:
         ramp = await col(OFFRAMP_ORDERS).find_one({"alfred_id": alfred_id})
         if ramp and ramp.get("status") == "pending":
