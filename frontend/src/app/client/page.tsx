@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageHeader, KpiCard, Badge } from "@prosper/ui";
 import { RefreshButton } from "@/components/PageActions";
 import { YieldChart } from "@/components/client/YieldChart";
+import { TodayYieldCard } from "@/components/client/TodayYieldCard";
 import {
   ArrowDownToLine, ArrowUpFromLine, Coins, TrendingUp,
   Wallet, LineChart, CalendarClock, Hash,
@@ -40,6 +41,17 @@ export default function ClientDashboardPage() {
         subtitle="Posición, rendimiento y movimientos recientes en un solo lugar."
         actions={<RefreshButton onClick={() => mutate()} />}
       />
+
+      {/* Today's yield — celebratory inline card (Phase 9 follow-up) */}
+      {data?.today_yield && canOperate && (
+        <TodayYieldCard
+          earned={data.today_yield.earned}
+          earningNow={data.today_yield.earning_now}
+          total={data.today_yield.total}
+          asOf={data.today_yield.as_of}
+          series={data.daily_yield || []}
+        />
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" data-testid="kpi-row">

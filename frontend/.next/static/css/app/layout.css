@@ -1357,6 +1357,10 @@ video {
   margin-top: 0.75rem;
   margin-bottom: 0.75rem;
 }
+.-my-1 {
+  margin-top: -0.25rem;
+  margin-bottom: -0.25rem;
+}
 .-mb-px {
   margin-bottom: -1px;
 }
@@ -1444,6 +1448,9 @@ video {
 .mt-8 {
   margin-top: 2rem;
 }
+.mr-0\.5 {
+  margin-right: 0.125rem;
+}
 .line-clamp-1 {
   overflow: hidden;
   display: -webkit-box;
@@ -1461,6 +1468,9 @@ video {
 }
 .inline-block {
   display: inline-block;
+}
+.inline {
+  display: inline;
 }
 .flex {
   display: flex;
@@ -1653,6 +1663,9 @@ video {
 }
 .w-20 {
   width: 5rem;
+}
+.w-1\/3 {
+  width: 33.333333%;
 }
 .min-w-0 {
   min-width: 0px;
@@ -2200,8 +2213,18 @@ video {
 .bg-gradient-to-b {
   background-image: linear-gradient(to bottom, var(--tw-gradient-stops));
 }
+.bg-gradient-to-br {
+  background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
+}
+.via-transparent {
+  --tw-gradient-to: rgb(0 0 0 / 0)  var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), transparent var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
 .to-transparent {
   --tw-gradient-to: transparent var(--tw-gradient-to-position);
+}
+.to-primary\/5 {
+  --tw-gradient-to: rgb(37 99 255 / 0.05) var(--tw-gradient-to-position);
 }
 .object-cover {
   -o-object-fit: cover;
@@ -2585,6 +2608,9 @@ video {
 .opacity-80 {
   opacity: 0.8;
 }
+.opacity-\[0\.04\] {
+  opacity: 0.04;
+}
 .shadow-2xl {
   --tw-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
   --tw-shadow-colored: 0 25px 50px -12px var(--tw-shadow-color);
@@ -2942,6 +2968,10 @@ video {
 
   .sm\:grid-cols-5 {
     grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .sm\:grid-cols-\[1fr_180px\] {
+    grid-template-columns: 1fr 180px;
   }
 
   .sm\:flex-row {

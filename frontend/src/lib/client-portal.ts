@@ -63,6 +63,13 @@ export interface ClientDashboard {
   positions: ClientPosition[];
   recent_transactions: ClientTx[];
   monthly_yield: Array<{ month: string; yield_usd: number }>;
+  daily_yield: Array<{ date: string; yield_usd: number }>;
+  today_yield: {
+    earned:      number;
+    earning_now: number;
+    total:       number;
+    as_of:       string;
+  };
   projection: { realized_ytd: number; projected_annual: number };
   kyb_status: string;
   paused: boolean;

@@ -146,6 +146,34 @@ async def client_dashboard(user: CurrentUser = Depends(get_current_user)):
                        if (p.get("start") or "")[:4] == str(now.year))
     projected_annual = principal_invested * (avg_apr_bps / 10_000)
 
+    # --- Today's yield: live-computed slice of the daily accrual ---
+    # We accrue: principal × apr_bps / 10_000 / 365 per position per day.
+    # If today's accrual already ran (last_accrued_date == today), we expose
+    # that as "earned"; otherwise we expose the same number as "earning today"
+    # so the customer sees the figure regardless of when they visit.
+    today_str = now.strftime("%Y-%m-%d")
+    today_earned = 0.0
+    earning_now  = 0.0
+    for p in active_positions:
+        daily = (p.get("principal_usd", 0) or 0) * (p.get("apr_bps", 0) or 0) / 10_000 / 365
+        if p.get("last_accrued_date") == today_str:
+            today_earned += daily
+        else:
+            earning_now += daily
+    today_total = round(today_earned + earning_now, 4)
+
+    # Last 7 days yield (only includes already-applied accruals).
+    daily_yield: list[dict] = []
+    for offset in range(6, -1, -1):
+        day = (now - timedelta(days=offset)).strftime("%Y-%m-%d")
+        # We approximate per-day accrual from active positions whose
+        # start_date <= day; this is a snapshot used only to fill the sparkline.
+        earned = 0.0
+        for p in positions:
+            if (p.get("start") or "")[:10] <= day and p.get("status") != "redeemed":
+                earned += (p.get("principal_usd", 0) or 0) * (p.get("apr_bps", 0) or 0) / 10_000 / 365
+        daily_yield.append({"date": day, "yield_usd": round(earned, 4)})
+
     return {
         "kpis": {
             "available_usdc":      round(available_usdc, 2),
@@ -177,6 +205,13 @@ async def client_dashboard(user: CurrentUser = Depends(get_current_user)):
             "created_at":     t.get("created_at"),
         } for t in recent_5],
         "monthly_yield":      monthly_yield_series,
+        "daily_yield":        daily_yield,
+        "today_yield": {
+            "earned":      round(today_earned, 4),
+            "earning_now": round(earning_now, 4),
+            "total":       today_total,
+            "as_of":       today_str,
+        },
         "projection": {
             "realized_ytd":     round(realized_ytd, 2),
             "projected_annual": round(projected_annual, 2),
