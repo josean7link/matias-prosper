@@ -4,6 +4,7 @@ These endpoints are super_admin only — they materially affect data and are
 intended for sales-demo workflows + pre-launch cleanup.
 """
 from __future__ import annotations
+import os
 import secrets as _s
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -197,6 +198,36 @@ async def seed_demo_client(body: SeedDemoClientIn,
                       resource_type="organization", resource_id=org_id,
                       metadata=summary)
     return {"ok": True, **summary, "kyb_status": kyb_status}
+
+
+# ---------------------------------------------------------------------------
+# Sprint 12.5 — Sync our webhook URL into the Alfred dashboard.
+# Idempotent. Useful once-per-environment after the API base / public URL
+# changes (preview, staging, prod).
+# ---------------------------------------------------------------------------
+@router.post("/sync-alfred-webhook")
+async def sync_alfred_webhook(user: CurrentUser = Depends(_super)):
+    public_base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/")
+    if not public_base:
+        raise HTTPException(400, "PUBLIC_BASE_URL is not configured")
+    target = f"{public_base}/api/v1/webhooks/alfred"
+
+    try:
+        from integrations.alfred import get_adapter
+        adapter = get_adapter()
+        if not hasattr(adapter, "configure_webhook_url"):
+            raise HTTPException(400, "Current Alfred adapter mode does not "
+                                       "support webhook URL configuration "
+                                       "(mock).")
+        result = await adapter.configure_webhook_url(  # type: ignore[attr-defined]
+            url=target, method="POST")
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Alfred webhook config failed: {e}")
+
+    await log_action(actor=user, action="admin.ops.sync_alfred_webhook",
+                      resource_type="system", resource_id="alfred-webhook",
+                      metadata={"target": target, "result": result})
+    return {"ok": True, "target": target, "alfred_response": result}
 
 
 # ---------------------------------------------------------------------------

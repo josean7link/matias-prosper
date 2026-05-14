@@ -74,7 +74,10 @@ class AlfredAdapter(ABC):
     async def create_onramp_order(self, *, quote_id: str, source_currency: str,
                                   source_amount: float, user_id: str, org_id: str,
                                   callback_url: str,
-                                  payment_method: str) -> OnrampOrderResponse: ...
+                                  payment_method: str,
+                                  deposit_address: Optional[str] = None,
+                                  customer_id: Optional[str] = None,
+                                  ) -> OnrampOrderResponse: ...
 
     @abstractmethod
     async def create_offramp_order(self, *, quote_id: str, usdc_amount: float,

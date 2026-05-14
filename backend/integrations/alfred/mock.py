@@ -98,7 +98,8 @@ class MockAlfredAdapter(AlfredAdapter):
         )
 
     async def create_onramp_order(self, *, quote_id, source_currency, source_amount,
-                                  user_id, org_id, callback_url, payment_method) -> OnrampOrderResponse:
+                                  user_id, org_id, callback_url, payment_method,
+                                  deposit_address=None, customer_id=None) -> OnrampOrderResponse:
         # Simulate Alfred-side validation
         if source_amount <= 0:
             raise AlfredError("source_amount must be > 0")

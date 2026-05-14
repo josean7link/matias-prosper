@@ -39,6 +39,24 @@ logger = logging.getLogger("prosper.alfred")
 WEBHOOK_TOLERANCE_SECONDS = 300
 
 
+# Map Prosper's internal `payment_method` enum to Alfred Penny values.
+# Penny only accepts a closed set; the most common are BANK / MERCADO_PAGO /
+# CARD / CRYPTO. Other values get the canonical Penny default `BANK`.
+_PAYMENT_METHOD_MAP = {
+    "transfer":      "BANK",
+    "bank":          "BANK",
+    "bank_transfer": "BANK",
+    "mercadopago":   "MERCADO_PAGO",
+    "mercado_pago":  "MERCADO_PAGO",
+    "card":          "CARD",
+    "crypto":        "CRYPTO",
+}
+
+
+def _alfred_payment_method(value: str) -> str:
+    return _PAYMENT_METHOD_MAP.get((value or "").lower().strip(), "BANK")
+
+
 def _base_url(mode: str) -> str:
     if mode == "production":
         return os.environ.get(
@@ -154,17 +172,27 @@ class RealAlfredAdapter(AlfredAdapter):
     # ---------------------------------------------------------------------
     async def create_onramp_order(self, *, quote_id, source_currency, source_amount,
                                     user_id, org_id, callback_url,
-                                    payment_method) -> OnrampOrderResponse:
+                                    payment_method,
+                                    deposit_address=None, customer_id=None,
+                                    ) -> OnrampOrderResponse:
+        # Resolve the destination address. Caller's `deposit_address` wins;
+        # then a global default from env; finally an empty string (Alfred
+        # will reject — fail-fast is intentional).
+        dest_addr = (deposit_address
+                      or os.environ.get("ALFRED_DEFAULT_DEPOSIT_ADDRESS", ""))
+        cust_id   = (customer_id
+                      or os.environ.get("ALFRED_DEFAULT_CUSTOMER_ID")
+                      or user_id)
         # Optional kwargs forwarded via raw env / per-org defaults
         body = {
             "quoteId":           quote_id,
-            "customerId":        os.environ.get("ALFRED_DEFAULT_CUSTOMER_ID") or user_id,
+            "customerId":        cust_id,
             "fromCurrency":      source_currency,
             "toCurrency":        "USDC",
             "amount":            str(source_amount),
             "chain":             os.environ.get("ALFRED_DEFAULT_CHAIN", "XLM"),
-            "depositAddress":    os.environ.get("ALFRED_DEFAULT_DEPOSIT_ADDRESS", ""),
-            "paymentMethodType": payment_method.upper(),
+            "depositAddress":    dest_addr,
+            "paymentMethodType": _alfred_payment_method(payment_method),
             "callbackUrl":       callback_url,
             "externalReference": f"prosper:{org_id}:{user_id}",
         }
@@ -242,7 +270,6 @@ class RealAlfredAdapter(AlfredAdapter):
     # Health check — does a benign call so caller can verify creds
     # ---------------------------------------------------------------------
     async def health_check(self) -> dict:
-        """Probe the API with a tiny no-side-effect call. Used by /v1/status."""
         try:
             # ARS minimum typically ≥ 5000 — use a value sandbox accepts.
             await self.get_quote(direction="onramp",
@@ -252,6 +279,24 @@ class RealAlfredAdapter(AlfredAdapter):
             return {"ok": True, "mode": self.mode}
         except AlfredError as e:
             return {"ok": False, "mode": self.mode, "error": str(e)[:200]}
+
+    # ---------------------------------------------------------------------
+    # Webhook URL config — PUT /webhooks/url/config
+    # ---------------------------------------------------------------------
+    async def configure_webhook_url(self, *, url: str,
+                                      method: str = "POST",
+                                      extra_headers: Optional[dict] = None,
+                                      ) -> dict:
+        """Tell Alfred where to deliver event webhooks. Idempotent."""
+        body = {
+            "url":     url,
+            "method":  method.upper(),
+            "headers": {"Content-Type": "application/json",
+                          "accept":       "application/json",
+                          **(extra_headers or {})},
+        }
+        return await self._request("PUT", "/webhooks/url/config",
+                                     json_body=body)
 
     # ---------------------------------------------------------------------
     # Webhook signature — header `Signature: t=<ts>,s=<hex_hmac_sha256>`

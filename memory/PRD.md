@@ -347,3 +347,28 @@ Real Prosper API (`https://apidev.protocol-prosper.io`) integrada en modo `devel
 - `balance_xlm: 2.99999` (Prosper auto-funda con XLM para gas)
 
 **Tests**: 30/30 pytest combinados (Phase 1 + 11B + 12 + 12.4 + Alfred live + Prosper live).
+
+## ✅ Sprint 12.5 — Webhook config + dynamic deposit + Alfred-server-validated onramp (2026-05-14)
+
+**Endpoint admin para configurar webhook en Alfred dashboard**:
+- `POST /v1/admin/ops/sync-alfred-webhook` (super_admin) → llama `PUT /webhooks/url/config` con `{url: PUBLIC_BASE_URL + /api/v1/webhooks/alfred, method: POST}`. Idempotente.
+- Live-validado contra sandbox Alfred Pay: respondió OK + echó la config persistida.
+
+**Dynamic deposit address por org**:
+- `RealAlfredAdapter.create_onramp_order` + `MockAlfredAdapter` aceptan kwargs `deposit_address` y `customer_id`.
+- En `/v1/client/onramp/orders` antes de crear la orden corremos `ensure_org_prosper_wallet(org_id)` y pasamos su `stellar_address` como `depositAddress`. Sin esto, Alfred no sabría dónde depositar el USDC.
+
+**Mapping payment_method real**:
+- Nuevo `_alfred_payment_method()` traduce nuestros enums internos (`transfer`/`mercadopago`/`card`/`crypto`) a los valores Penny (`BANK`/`MERCADO_PAGO`/`CARD`/`CRYPTO`). Default `BANK`. Antes hacíamos `.upper()` y mandábamos `TRANSFER` → 422.
+
+**Status mapping extendido**:
+- `alfred_status_to_internal` ahora soporta también `KYC_PENDING|APPROVED|REJECTED` y `REFUND_INITIATED|COMPLETED`. Los buckets KYC y REFUND son nuevos, separados de onramp lifecycle.
+
+**Live evidence**:
+- Webhook URL config: respuesta 200 desde Alfred sandbox echo-ing el `https://15b54ecb-…/api/v1/webhooks/alfred`.
+- Quote real ARS 50.000 → 33.0169 USDC @ 1506.69.
+- Onramp order: pasa quote + payment_method correctos; falla **solo en `customerId`** porque Alfred requiere un customer pre-creado vía su KYC iframe flow.
+
+**Pendiente para cerrar el último 5% del onramp E2E real** (lo único que falta):
+- Crear un customer en el dashboard Alfred (o programáticamente vía `POST /customers` — pero ese flow requiere recolectar KYC PII del usuario por su iframe). Setear `ALFRED_DEFAULT_CUSTOMER_ID` en `.env` mientras tanto.
+- Probar transferencia bancaria sandbox real → Alfred dispara `FIAT_DEPOSIT_RECEIVED` → `TRADE_COMPLETED` → `ON_CHAIN_COMPLETED` → nuestro webhook receiver auto-buyea PUSD en la wallet Stellar de la org.

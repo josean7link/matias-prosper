@@ -181,6 +181,18 @@ async def create_onramp(body: OnrampCreate, request: Request,
     base = str(request.base_url).rstrip("/")
     callback = f"{base}/api/v1/webhooks/alfred"
 
+    # Sprint 12.5 — Resolve the org's Prosper Stellar address as the
+    # destination for the USDC. Falls back to ALFRED_DEFAULT_DEPOSIT_ADDRESS
+    # if the org hasn't been provisioned yet (mock mode / early development).
+    deposit_address: str | None = None
+    try:
+        from routes.onramp_flow import ensure_org_prosper_wallet
+        wallet = await ensure_org_prosper_wallet(user.org_id)
+        deposit_address = wallet.get("stellar_address") or None
+    except Exception:  # noqa: BLE001
+        # Prosper might be down — let Alfred reject so we fail loud.
+        deposit_address = None
+
     try:
         resp = await get_adapter().create_onramp_order(
             quote_id=body.quote_id,
@@ -189,7 +201,9 @@ async def create_onramp(body: OnrampCreate, request: Request,
             user_id=user.user_id,
             org_id=user.org_id,
             callback_url=callback,
-            payment_method=body.payment_method)
+            payment_method=body.payment_method,
+            deposit_address=deposit_address,
+        )
     except AlfredError as e:
         await _log_call("create_onramp_order", org_id=user.org_id, user_id=user.user_id,
                          payload=body.model_dump(), response={}, error=str(e))

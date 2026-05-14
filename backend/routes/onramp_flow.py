@@ -105,7 +105,7 @@ _STATUS_MAP: dict[str, str] = {
     "order.confirmed":      "confirmed",
     "order.completed":      "completed",
     "order.failed":         "failed",
-    # Penny live
+    # Penny live — onramp / offramp lifecycle
     "fiat_deposit_received": "pending",
     "trade_completed":        "confirmed",
     "on_chain_initiated":     "confirmed",
@@ -113,6 +113,14 @@ _STATUS_MAP: dict[str, str] = {
     "failed":                 "failed",
     "expired":                "failed",
     "cancelled":              "failed",
+    # KYC events from Penny (handled separately by /webhooks/alfred — they
+    # update the org doc + audit log instead of an onramp/offramp).
+    "kyc_pending":            "kyc_pending",
+    "kyc_approved":           "kyc_approved",
+    "kyc_rejected":           "kyc_rejected",
+    # Refund events
+    "refund_initiated":       "refund_initiated",
+    "refund_completed":       "refund_completed",
 }
 
 
