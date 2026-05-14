@@ -1,10 +1,21 @@
-"""Phase 9 — Auto-buy + manual buy + redeem + accrual tests."""
+"""Phase 9 — Auto-buy + manual buy + redeem + accrual tests.
+
+The auto-buy path depends on the Alfred mock `/mock-settle` endpoint, so
+this whole module is skipped when running against the live Alfred sandbox.
+"""
 from __future__ import annotations
 import os
 import asyncio
 
 import pytest
 import requests
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("ALFRED_MODE", "mock") != "mock",
+    reason="Phase 9 auto-buy uses /mock-settle (mock Alfred only)")
 
 BASE = os.environ.get("PROSPER_API_BASE_TEST", "http://localhost:8001/api")
 API  = f"{BASE}/v1"

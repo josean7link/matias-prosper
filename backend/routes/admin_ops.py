@@ -291,12 +291,30 @@ async def _build_status_payload():
         services.append({"id": "webhooks", "name": "Webhooks delivery",
                           "status": "operational"})
 
-    # 7. Integrations (mode flags)
+    # 7. Integrations (live ping when in non-mock mode)
     alfred_mode  = _os.environ.get("ALFRED_MODE",  "mock")
     prosper_mode = _os.environ.get("PROSPER_MODE", "mock")
-    services.append({"id": "alfred", "name": "Alfred (Onramp/Offramp)",
-                      "status": "operational",
-                      "detail": f"modo {alfred_mode}"})
+    if alfred_mode in ("sandbox", "production"):
+        try:
+            from integrations.alfred import get_adapter as _alfred_adapter
+            ad = _alfred_adapter()
+            h = await ad.health_check()  # type: ignore[attr-defined]
+            if h.get("ok"):
+                services.append({"id": "alfred", "name": "Alfred (Onramp/Offramp)",
+                                  "status": "operational",
+                                  "detail": f"modo {alfred_mode} · live ping ok"})
+            else:
+                services.append({"id": "alfred", "name": "Alfred (Onramp/Offramp)",
+                                  "status": "degraded",
+                                  "detail": (h.get("error") or "ping failed")[:120]})
+        except Exception as e:
+            services.append({"id": "alfred", "name": "Alfred (Onramp/Offramp)",
+                              "status": "degraded",
+                              "detail": str(e)[:120]})
+    else:
+        services.append({"id": "alfred", "name": "Alfred (Onramp/Offramp)",
+                          "status": "operational",
+                          "detail": f"modo {alfred_mode}"})
     services.append({"id": "prosper", "name": "Prosper backend (Stellar)",
                       "status": "operational",
                       "detail": f"modo {prosper_mode}"})

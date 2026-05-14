@@ -1,4 +1,9 @@
-"""Phase 8 — Alfred onramp/offramp + webhook tests (mock mode)."""
+"""Phase 8 — Alfred onramp/offramp + webhook tests (mock mode).
+
+Skipped when ALFRED_MODE != "mock" because these tests assert mock-specific
+behaviour (quote IDs prefixed `qt_mock_`, `/mock-settle` endpoint, etc.).
+The live sandbox integration is covered by `test_alfred_real_live.py`.
+"""
 from __future__ import annotations
 import hashlib
 import hmac
@@ -7,6 +12,13 @@ import os
 
 import pytest
 import requests
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("ALFRED_MODE", "mock") != "mock",
+    reason="Phase 8 tests assume mock Alfred adapter")
 
 BASE = os.environ.get("PROSPER_API_BASE", "http://localhost:8001/api")
 API  = f"{BASE}/v1"

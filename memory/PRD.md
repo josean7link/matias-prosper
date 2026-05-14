@@ -257,6 +257,31 @@ Página `/client/profile` rediseñada con 5 tabs y session-aware auth.
 - Testing agent verificó frontend + backend al 100% (`iteration_16.json`).
 - 7 fallos pre-existentes en phase2/3/5/9_extras son data-count drift por seed pollution entre iteraciones — NO regresiones de Phase 12.
 
+## ✅ Sprint 12.1 — Alfred Pay live integration (2026-05-14)
+
+Real Alfred Pay "Penny" API integrada en `sandbox` mode con creds del cliente.
+
+**Backend** (`integrations/alfred/real.py` reescrito completo):
+- Headers `api-key` + `api-secret` + `Content-Type: application/json` por request.
+- Endpoints reales: `POST /quotes`, `POST /onramp`, `POST /offramp`, `GET /transactions/{id}`.
+- Quote body: `fromCurrency`, `toCurrency`, **`fromAmount` (string)**, `chain`, `paymentMethodType` (default `BANK`).
+- Onramp response unwrappea `{transaction, fiatPaymentInstructions}` (paymentType: SPEI/PIX/ARS_BANK_TRANSFER/etc.).
+- Webhook signature: `Signature: t=<ts>,s=<hex_hmac_sha256>` canonical `f"{ts}.{rawBody}"`, tolerancia ±5min.
+- `health_check()` hace quote real 35.000 ARS → USDC para validar creds.
+- `/v1/status` live-pinga Alfred cuando `ALFRED_MODE != mock`.
+
+**.env** ya tiene: `ALFRED_MODE=sandbox`, `ALFRED_API_KEY`, `ALFRED_API_SECRET`, `ALFRED_WEBHOOK_SECRET`, `ALFRED_BUSINESS_ID=187`, `ALFRED_API_BASE_SANDBOX/PRODUCTION`.
+
+**Tests**: `test_alfred_real_live.py` (mark `live`) valida quote real + health. Phase 8/9 tests ahora `skipif(ALFRED_MODE != mock)`. `pytest.ini` registra mark `live`. 25 passed + 20 skipped en la corrida combinada.
+
+**Pendiente Sprint 12.2 opcional** para enchufar onramp E2E:
+- `POST /customers` por organización (hoy reusamos `user_id` como fallback).
+- Configurar `ALFRED_DEFAULT_DEPOSIT_ADDRESS` con wallet Stellar real de Prosper.
+- Webhook URL en dashboard Alfred → `/api/v1/webhooks/alfred`.
+- Mapear status events (`FIAT_DEPOSIT_RECEIVED`, `TRADE_COMPLETED`, `ON_CHAIN_INITIATED`, `ON_CHAIN_COMPLETED`, `FAILED`) → enums internos.
+
+**Mocked todavía**: AiPrise · Resend · TRM Labs · Prosper (Stellar). **Alfred Pay = LIVE sandbox** ✅.
+
 
 - Sumsub Web SDK integration en `/apply` (continuar prompt 1 de Fase 5).
 - Audit log viewer `/admin/compliance/audit` (continuar prompt 2 de Fase 5).
