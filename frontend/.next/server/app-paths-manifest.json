@@ -1,4 +1,9 @@
 {
   "/login/page": "app/login/page.js",
-  "/client/page": "app/client/page.js"
+  "/client/page": "app/client/page.js",
+  "/client/onramp/page": "app/client/onramp/page.js",
+  "/client/onramp/[id]/checkout/page": "app/client/onramp/[id]/checkout/page.js",
+  "/client/onramp/[id]/success/page": "app/client/onramp/[id]/success/page.js",
+  "/client/offramp/page": "app/client/offramp/page.js",
+  "/client/transactions/page": "app/client/transactions/page.js"
 }

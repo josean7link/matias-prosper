@@ -39,6 +39,11 @@ from routes.admin_settings import router as admin_settings_router
 from routes.admin_clients import router as admin_clients_router
 from routes.admin_clients.links import public as public_links_router
 from routes.client_portal import router as client_portal_router, public as apply_public_router
+from routes.client_alfred import (
+    router as client_alfred_router,
+    webhook_router as alfred_webhook_router,
+    mock_router as alfred_mock_router,
+)
 from routes.webhooks_aiprise import router as aiprise_webhooks_router
 
 logging.basicConfig(level=logging.INFO)
@@ -434,5 +439,8 @@ api.include_router(admin_clients_router, prefix="/v1")
 api.include_router(public_links_router, prefix="/v1")
 api.include_router(client_portal_router, prefix="/v1")
 api.include_router(apply_public_router, prefix="/v1")
+api.include_router(client_alfred_router, prefix="/v1")
+api.include_router(alfred_webhook_router, prefix="/v1")
+api.include_router(alfred_mock_router, prefix="/v1")
 api.include_router(aiprise_webhooks_router, prefix="/v1")
 app.include_router(api)

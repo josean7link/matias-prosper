@@ -68,7 +68,7 @@ export default function ClientDashboardPage() {
       {/* Action buttons (gated) */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8" data-testid="action-row">
         <ActionBtn
-          href="/client/deposit"
+          href="/client/onramp"
           icon={<ArrowDownToLine size={16} />}
           label="Cargar dinero"
           subtitle="USDC vía wire o crypto"
@@ -85,7 +85,7 @@ export default function ClientDashboardPage() {
           primary
         />
         <ActionBtn
-          href="/client/deposit?mode=withdraw"
+          href="/client/offramp"
           icon={<ArrowUpFromLine size={16} />}
           label="Retirar"
           subtitle="Off-ramp a tu cuenta"
@@ -221,7 +221,7 @@ export default function ClientDashboardPage() {
               <h3 className="font-display font-bold text-lg text-fg mt-0.5">Transacciones</h3>
             </div>
             <Link
-              href="/client/deposit"
+              href="/client/transactions"
               className="text-[11px] font-mono uppercase tracking-wider text-primary hover:underline"
               data-testid="tx-see-all"
             >

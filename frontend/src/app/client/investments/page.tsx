@@ -1,21 +1,16 @@
 import { PageHeader } from "@prosper/ui";
 import { ComingSoon } from "@/components/Page";
-import { RefreshButton } from "@/components/PageActions";
 
 export default function Page() {
   return (
-    <div>
+    <div data-testid="invest-page">
       <PageHeader
-        breadcrumbs={[
-          { label: "Client", href: "/client" },
-          { label: "Inversiones" },
-        ]}
-        kicker="Client"
+        breadcrumbs={[{ label: "Client", href: "/client" }, { label: "Inversiones" }]}
+        kicker="Phase 9 · Próximamente"
         title="Inversiones"
-        subtitle="Tus posiciones abiertas y su estado en tiempo real."
-        actions={<RefreshButton />}
+        subtitle="Compra de Prosper Yield Token y gestión de posiciones."
       />
-      <ComingSoon what="Inversiones" />
+      <ComingSoon what="Inversiones · Comprar Prosper Yield Token" />
     </div>
   );
 }

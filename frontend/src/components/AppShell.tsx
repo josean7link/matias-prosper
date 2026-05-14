@@ -28,12 +28,12 @@ const ADMIN_NAV: NavItem[] = [
 ];
 
 const CLIENT_NAV: NavItem[] = [
-  { href: "/client",            label: "Dashboard",         icon: LayoutDashboard },
-  { href: "/client/deposit",    label: "Cargar / Retirar",  icon: ArrowDownUp, soon: true },
-  { href: "/client/investments",label: "Inversiones",       icon: Coins, soon: true },
-  { href: "/client/yield",      label: "Rendimientos",      icon: TrendingUp, soon: true },
-  { href: "/client/profile",    label: "Perfil",            icon: User },
-  { href: "/client/services",   label: "Servicios futuros", icon: Sparkles, soon: true },
+  { href: "/client",             label: "Dashboard",         icon: LayoutDashboard },
+  { href: "/client/onramp",      label: "Cargar dinero",     icon: ArrowDownUp },
+  { href: "/client/offramp",     label: "Retirar",           icon: TrendingUp },
+  { href: "/client/transactions",label: "Movimientos",       icon: Coins },
+  { href: "/client/profile",     label: "Perfil",            icon: User },
+  { href: "/client/services",    label: "Servicios futuros", icon: Sparkles, soon: true },
 ];
 
 export function AppShell({

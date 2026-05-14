@@ -1,0 +1,48 @@
+{
+  "summary": "FASE 8 - Portal Cliente / Alfred Onramp + Offramp (mock mode) tested end-to-end. Backend: 10/10 pytest pass (8 existing + 2 new added by this iteration). Frontend: onramp end-to-end happy path verified (quote ARS 100k -> 96.31 USDC, 60s countdown, Confirmar y pagar -> /checkout with PENDING + Alfred ID + 5s SWR polling, mock-settle -> automatic redirect to /success with check icon, USDC amount, alfred_id, coelsa_id, fee, rate, CTAs Empezar a invertir + Hacer otra carga). Transactions page renders with 12 rows including the 3 new onramps, filters (tipo+status) and CSV button visible. Dashboard CTA buttons link correctly: action-deposit -> /client/onramp, action-invest -> /client/investments, action-withdraw -> /client/offramp. Finpact (KYB pending) gating works correctly on /client/onramp and /client/offramp (shows ClientGateBanner with data-status=pending + page-level 'Onboarding pendiente' empty state, no Confirmar button rendered). Offramp empty state (balance=0 + source=balance) verified.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "missing_data_testids": [
+      {"page": "/client/onramp/[id]/success", "missing": ["onramp-success-amount", "onramp-success-alfred-id", "onramp-success-coelsa-id", "onramp-success-invest", "onramp-success-again"], "note": "Content renders correctly (96.31 USDC, alfred/coelsa IDs, both CTAs) but data-testid attributes are not present, making future E2E selectors brittle."},
+      {"page": "/client/offramp", "missing": ["offramp-source-balance", "offramp-source-position", "offramp-amount", "offramp-target-currency", "offramp-bank-holder", "offramp-bank-iban", "offramp-bank-name", "offramp-confirm"], "note": "Couldn't be observed in the rendered form because alemany balance is 0 (empty state). Recommend adding data-testid so they exist regardless of which branch the page renders."},
+      {"page": "/client/transactions", "missing": ["tx-filter-type", "tx-filter-status", "tx-export-csv"], "note": "Only tx-table has data-testid. Filter <select> elements and the CSV link should have data-testid for automation."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase8_alfred.py",
+    "/app/test_reports/pytest/phase8_alfred.xml"
+  ],
+  "action_items": [
+    "(Recommended) Add data-testid attributes on the Onramp success page (amount, alfred-id, coelsa-id, invest CTA, again CTA) for stable E2E selectors.",
+    "(Recommended) Add data-testid attributes on the Offramp form (source tabs balance/position, amount, target currency, bank-holder/iban/name, confirm) so they survive the empty-state vs form branches.",
+    "(Recommended) Add data-testid='tx-filter-type', 'tx-filter-status', 'tx-export-csv' to the transactions page filters + CSV button.",
+    "(Informational) DoD copy mentions 'source: balance | wallet' but the Pydantic schema enforces 'balance' | 'position'. UI labels appear consistent with backend; if 'wallet' was intended it must be added to the schema's Literal as well."
+  ],
+  "critical_code_review_comments": [
+    "Webhook idempotency: existing pytest used a fixed event_id which leaked across runs (KeyError on replay vs fresh). Fixed by using uuid4() per test. The endpoint correctly returns {ok:true, event_id, type} on first hit and {ok:true, idempotent:true} on replay — good behaviour, just unstable test fixture.",
+    "Mock-settle endpoint is correctly guarded by current_mode()=='mock' and synthesizes the same webhook event (HMAC-signed) that the public webhook handler would receive — clean parity between real and mock paths.",
+    "client_alfred.py is 706 lines, ON the 700-line guideline. Consider splitting into 4 modules: onramp_routes.py, offramp_routes.py, webhook_routes.py, mock_routes.py for future maintainability.",
+    "_ensure_tx_for_onramp + _ensure_tx_for_offramp helpers correctly de-dupe via prosper_tx_id ('onramp::<id>'/'offramp::<id>'), so re-running settle or replaying webhooks won't create duplicate TRANSACTIONS rows.",
+    "GET /client/onramp/orders/{id} lazily refreshes status from the adapter on every read while order is 'pending'. This is the right pattern for mock auto-settle but in real mode it will add a round-trip to Alfred on every poll — acceptable but worth a TTL cache for production.",
+    "Onramp checkout page exposes the raw alfred_id in the UI ('alf_on_...') which is fine for ops/visibility but worth confirming with product that this is desired customer-facing copy."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase8_alfred.py (fixed flaky webhook test with uuid; added 2 new tests: test_mock_settle_and_get_order_auto_refresh_and_history and test_history_requires_auth)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% functional / data-testid gaps only"},
+  "test_credentials": "client.admin@alemany.capital (approved, used for happy paths), client.admin@finpact.io (KYB pending, used for gate verification). Magic link via GET /api/v1/auth/dev-login?email=...&next=...",
+  "seed_data_creation": "Created 3 onramp orders for org_seed_alemany_capital during testing (all settled via mock-settle, total ~240 USDC credited) and 3 corresponding TRANSACTIONS rows of type=onramp/status=confirmed. Also created 1 mock-settled offramp via pytest. WEBHOOK_EVENTS now contains additional evt_test_idem_<uuid> rows.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "mocked_integrations_confirmed": [
+    "MockAlfredAdapter (rate 1 USD = 1030 ARS, 80 bps fee, auto-settle after 8/12s, or instant via /api/v1/alfred/mock-settle/{alfred_id})",
+    "Alfred webhook events synthesized by /alfred/mock-settle (HMAC-signed with ALFRED_WEBHOOK_SECRET=mock_secret_change_me)",
+    "Resend (RESEND_API_KEY empty -> preview_only)",
+    "AiPrise (template IDs empty -> simulated)"
+  ],
+  "context_for_next_testing_agent": "Phase 8 is stable. The Offramp FORM (with source tabs, amount, target currency, bank account) was NOT visually inspected on /client/offramp because alemany's balance is 0 and source=balance defaults to the empty state. To force the form to render, either switch the source tab to 'position' (real query param TBD — investigate the page source) or first run an onramp and wait for a subscription so balance > 0. The backend offramp create path IS fully covered by pytest (test_offramp_create_succeeds_with_matching_holder, test_offramp_rejects_mismatched_holder). The /client/offramp/[id]/status timeline page also wasn't visually verified — recommend creating an offramp via backend API (source='position'), then visiting /client/offramp/{id}/status to confirm the 5-step timeline + color badges. Working selectors confirmed this iteration: [data-testid='onramp-confirm'], [data-testid='onramp-amount'], [data-testid='onramp-quote-target'], [data-testid='onramp-countdown'], [data-testid='client-gate-banner'][data-status='pending'], [data-testid='action-deposit'|'action-invest'|'action-withdraw'], [data-testid='tx-table'].",
+  "rca_of_flaky_webhook_test": "test_webhook_accepts_valid_signature_and_is_idempotent failed on first run because the hardcoded event_id 'evt_test_idem_abc123' had already been processed in an earlier test run (likely from the main agent's smoke run before handing off). The replay path correctly returns {'ok':true, 'idempotent':true} WITHOUT echoing event_id, so the assertion r1.json()['event_id'] == ... raised KeyError. Mitigation applied: generate a fresh uuid4-based event_id per invocation so the test is self-contained and re-runnable. Endpoint behaviour is correct and unchanged."
+}

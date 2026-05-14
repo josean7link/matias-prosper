@@ -20,6 +20,31 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/client/layout.js"
+    ],
+    "/client/onramp/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/client/onramp/page.js"
+    ],
+    "/client/onramp/[id]/checkout/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/client/onramp/[id]/checkout/page.js"
+    ],
+    "/client/onramp/[id]/success/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/client/onramp/[id]/success/page.js"
+    ],
+    "/client/offramp/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/client/offramp/page.js"
+    ],
+    "/client/transactions/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/client/transactions/page.js"
     ]
   }
 }
