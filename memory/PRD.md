@@ -134,12 +134,36 @@ Frontend:
 - Phase 7: replace native date inputs en `/apply` (wizard step 2 + legacy form) por shadcn DatePicker.
 - Phase 7: real document upload (vs placeholder checkboxes) en wizard step 5 — engancha con AiPrise upload SDK cuando esté.
 
-## 🟡 Phase 8 — Portal Cliente · Onramp & Offramp (next P1)
-Cargar dinero (USDC via wire/crypto) y Retirar (off-ramp) — bloqueado por gate
-de KYB. Habilitar acción `/client/deposit` end-to-end.
+## ✅ Phase 8 — Portal Cliente · Alfred Onramp/Offramp (2026-05-14)
+Backend (`integrations/alfred/` + `routes/client_alfred.py`):
+- **Adapter pattern**: `AlfredAdapter` interface + `MockAlfredAdapter` (deterministic, in-memory order book, auto-settle 8s/12s) + `RealAlfredAdapter` stub. Switch via `ALFRED_MODE=mock|sandbox|production`. Factory caches singleton.
+- **Onramp** endpoints: `POST /client/onramp/quote` (TTL 60s), `POST /client/onramp/orders` (caps validation contra `subscribe_daily_cap_usd` / monthly), `GET /client/onramp/orders/{id}` (auto-refresca status desde Alfred + crea TX confirmada).
+- **Offramp** endpoints: `POST /client/offramp/quote`, `POST /client/offramp/orders` (valida que `bank_account.holder_name` matchee `org.legal_name`, caps redeem), `GET /client/offramp/orders/{id}` con timeline de 5 pasos.
+- **Webhook público** `POST /webhooks/alfred`: HMAC SHA256 con `ALFRED_WEBHOOK_SECRET`, idempotente por `event_id` (collection `webhook_events`), actualiza onramp/offramp orders.
+- **Mock helpers**: `/alfred/mock-checkout/{id}` (HTML self-contained con botones Pagar/Cancelar) + `/alfred/mock-settle/{id}` para fast-forward tests.
+- **History**: `GET /client/transactions/history?tx_type=&status=` con filtros.
+- **Audit + logging**: cada call a Alfred queda en `alfred_calls_log`, side-effects en `audit_logs`.
 
-## 🟡 Phase 9 — Portal Cliente · Invest (P1)
+Frontend:
+- `/client/onramp` — dos columnas (form izq + cotización viva dcha). 5 currency cards con bandera, monto, 4 payment methods, countdown 60s con auto-refresh, badge "modo mock".
+- `/client/onramp/[id]/checkout` — abre popup de Alfred + polling SWR cada 5s; redirige a /success o /failed según status.
+- `/client/onramp/[id]/success` — hero verde con check gigante, `+96.31 USDC ACREDITADO`, detalle (alfred_id, coelsa_id, fee, rate), CTAs (Empezar a invertir / Hacer otra carga).
+- `/client/offramp` — origen tabs (saldo libre / posición), monto USDC, currency destino, cuenta destino con guard de titular; quote viva.
+- `/client/offramp/[id]/status` — timeline 5 pasos color-coded, detalle + status badge.
+- `/client/transactions` — historial completo con filtros (tipo, status), export CSV, badges por tipo y status.
+
+10/10 pytest backend pass · frontend 100% funcional · `iteration_12.json`. Sin issues críticos.
+
+**Hardcoded FX (mock)**: 1 USD = 1030 ARS, 950 CLP, 5.10 BRL, 17.30 MXN, 0.92 EUR. Fee 80bps (Alfred 35 + Prosper 45).
+
+**Switch a producción**: cuando lleguen credenciales reales setear `ALFRED_API_KEY`, `ALFRED_MODE=sandbox` (o `production`), `ALFRED_WEBHOOK_SECRET`. El stub `RealAlfredAdapter` espera endpoints `/v1/quotes`, `/v1/orders/onramp`, `/v1/orders/offramp`, `/v1/orders/{id}` (confirmar formato con docs de Alfred al momento del switch).
+
+
 Comprar Prosper Yield Token (suscripción), gestión de posiciones, redenciones.
+
+## 🟡 Phase 9 — Portal Cliente · Invest (next P1)
+Comprar Prosper Yield Token (suscripción), gestión de posiciones, redenciones.
+Implementar también el flujo de offramp desde posición (hoy stubeado).
 
 ## 🟡 Future (per original PRD)
 - Sumsub Web SDK integration en `/apply` (continuar prompt 1 de Fase 5).
