@@ -1,5 +1,6 @@
 """Phase 7 — Client portal endpoints (scoped to JWT org_id)."""
 from __future__ import annotations
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -369,12 +370,14 @@ async def apply_finalize(body: ApplyFinalize):
 
     # Notify compliance@prosper.foundation
     subj = f"[KYB] Nuevo caso para revisión · {org.get('commercial_name') or org_id}"
+    _public = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+    _kyb_link = f"{_public}/admin/compliance/kyb" if _public else "/admin/compliance/kyb"
     body_html = _shell(f"""
         <h1>Nuevo KYB recibido</h1>
         <p>El cliente <strong>{org.get('commercial_name') or org_id}</strong> completó el wizard
         de onboarding desde /apply.</p>
         <p>Case ID: <code>{case_id}</code></p>
-        <p><a class="btn" href="https://finance-control-215.preview.emergentagent.com/admin/compliance/kyb">
+        <p><a class="btn" href="{_kyb_link}">
           Abrir cola KYB</a></p>""")
     await send_email(to="compliance@prosper.foundation", subject=subj,
                       html=body_html, template="kyb_submitted",
