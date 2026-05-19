@@ -1,7 +1,7 @@
 FROM node:20-alpine AS base
 WORKDIR /app
-COPY package.json yarn.lock* ./
-RUN yarn install --frozen-lockfile || yarn install
 COPY . .
+RUN yarn install --frozen-lockfile || yarn install
+WORKDIR /app/frontend
 EXPOSE 3000
 CMD ["yarn", "dev"]

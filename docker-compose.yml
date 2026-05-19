@@ -42,8 +42,8 @@ services:
 
   admin:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
     container_name: prosper-admin
     environment:
       - NEXT_PUBLIC_API_BASE=http://api:8001
