@@ -100,6 +100,9 @@ credentials.json
 *.pem
 *.key
 .credentials
+
+# Local-only operational notes
+README_PROXY_LOCAL.md
 -e 
 # Environment and credential files
 .env
