@@ -1,0 +1,112 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# IDE and editors
+.idea/
+.vscode/
+
+# Dependencies
+node_modules/
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Testing
+/coverage
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Production builds
+/build
+dist/
+dist
+
+# Environment files (comprehensive coverage)
+
+*token.json*
+*credentials.json*
+
+# Logs and debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dump.rdb
+
+# System files
+.DS_Store
+*.pem
+
+# Python
+__pycache__/
+*pyc*
+venv/
+.venv/
+
+# Development tools
+chainlit.md
+.chainlit
+.ipynb_checkpoints/
+.ac
+
+# Deployment
+.vercel
+
+# Data and databases
+agenthub/agents/youtube/db
+
+# Archive files and large assets
+**/*.zip
+**/*.tar.gz
+**/*.tar
+**/*.tgz
+*.pack
+*.deb
+*.dylib
+
+# Build caches
+.cache/
+
+memory/test_credentials.md
+
+# Mobile development
+android-sdk/frontend/node_modules/.cache/default-development/3.pack
+frontend/node_modules/.cache/default-development/3.pack
+frontend/node_modules/.cache/default-development/0.pack
+frontend/node_modules/.cache/default-development/4.pack_
+frontend/node_modules/.cache/default-development/2.pack
+frontend/node_modules/.cache/default-development/4.pack
+frontend/node_modules/.cache/default-development/12.pack
+frontend/node_modules/.cache/default-development/13.pack
+frontend/node_modules/.cache/default-development/6.pack
+frontend/node_modules/.cache/default-development/15.pack
+legacy/frontend/node_modules/.cache/default-development/3.pack
+legacy/frontend/node_modules/.cache/default-development/13.pack
+node_modules/@next/swc-linux-arm64-gnu/next-swc.linux-arm64-gnu.node
+node_modules/@next/swc-linux-arm64-musl/next-swc.linux-arm64-musl.node
+frontend/.next/cache/webpack/client-development/15.pack.gz
+# NOTE: the line above used to say ".env files must be tracked in git" —
+# that was only true for Emergent's own deploy pipeline (it injects prod
+# secrets by reading tracked .env files). We're deploying via GitHub +
+# Render/Vercel now, where secrets are set in each dashboard's Environment
+# panel instead. Tracking .env here would leak real credentials to the repo.
+.env
+.env.*
+*.env
+memory/PROD_DEPLOY.md
+credentials.json
+*.pem
+*.pem.*
+*.key
+.credentials
+frontend/.next/cache/webpack/client-production/0.pack
+codigo_limpio.zip

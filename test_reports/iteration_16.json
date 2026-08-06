@@ -1,0 +1,38 @@
+{
+  "summary": "Phase 12 (Polish + Demo Hardening + Status/Legal pages + Docs + E2E scaffolding) verified end-to-end. Backend pytest test_phase12_admin_ops.py: 6 passed + 1 skipped (intentional destructive wipe). Public /api/v1/status returns expected shape with overall=degraded (Redis not configured in preview — expected) and 8 services (mongo/redis/api/admin/client/webhooks/alfred/prosper). Security headers on every response: Strict-Transport-Security, X-Content-Type-Options=nosniff, Referrer-Policy=strict-origin-when-cross-origin, Permissions-Policy. Rate-limit helper bypasses cleanly with PROSPER_DISABLE_RATELIMIT=1 (15 rapid calls to /auth/passwordless-login and /auth/passwordless-token all returned 200/422, never 429); helper code raises HTTPException(429, 'Demasiadas requests — máx N/min en SCOPE') when env unset (inspection-verified, not live-tested to avoid restarting server). Mongo indices in db.ensure_indexes verified: TRANSACTIONS.tx_hash (sparse), ALERTS.assigned_to (sparse), SESSIONS.session_id (unique), SESSIONS.user_id, NAV_SNAPSHOTS.date (unique) all present. Frontend: /status renders with AlertTriangle icon + 'Algunos servicios degradados' banner + 8 service rows (Database OPERATIVO, OTP Cache DEGRADADO with 'Fallback a Mongo OTP storage', Public API/Portal Admin/Portal Cliente/Webhooks/Alfred/Prosper all OPERATIVO with modo mock detail), Refrescar button re-fetches successfully, Historial de incidentes section visible, PublicFooter rendered. /terms shows h1 'Términos de Servicio' + footer (no auth redirect — PUBLIC_PATHS works). /privacy shows h1 'Política de Privacidad' + footer. Admin /admin/clients: new 'Crear demo seedeado' button (data-testid=clients-seed-demo-btn) next to 'Nuevo cliente'. Clicking it after window.confirm override hits POST /api/v1/admin/ops/seed-demo-client → 200 with org_id=org_demo_191db6, user_id=usr_demo_191db6, kyb_status=approved, tx_count=2, position_count=1. Toast 'Demo creado · org_demo_191db6' visible and new 'Demo Holdings 191DB6' row appears with APPROVED + FINTECH + AR + $293,762.84 volume. All required docs exist (RUNBOOK.md/ARCHITECTURE.md/COMPLIANCE.md/INTEGRATIONS.md/backend/.env.example/.github/workflows/{ci.yml,deploy-prod.yml}/backend/Dockerfile with HEALTHCHECK). E2E scaffolding at /app/e2e — package.json/playwright.config.ts/README.md/tests/_helpers.ts/tests/01..05*.spec.ts all present; all 7 .ts files transpile clean (zero syntax errors). Playwright suite NOT executed (chromium not installed in pod, per request).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase12_admin_ops.py",
+    "/app/test_reports/pytest/phase12_admin_ops.xml"
+  ],
+  "action_items": [
+    "Reminder: PROSPER_DISABLE_RATELIMIT=1 in /app/backend/.env must be REMOVED for staging/prod deploys (currently kept for preview tests — already documented in review_request).",
+    "(Already-known, non-blocking) Pre-existing failures in test_phase2/3/5/9_extras are data-count drift from shared seed pollution across iterations — NOT Phase 12 regressions. Worth a baseline seed reset before promoting to staging."
+  ],
+  "critical_code_review_comments": [
+    "admin_ops.seed_demo_client mixes a deterministic suffix (token_hex(3) = 6 hex chars) into both org_id AND user_id AND email domain. Collision probability ~1/16M is fine, but for an audit-friendly trail consider a monotonic counter or longer suffix.",
+    "admin_ops.seed_demo_client seeds tx_hash='DEMO_TX_HASH_<SUFFIX>' on the subscribe tx — relies on sparse index uniqueness NOT being enforced (sparse, non-unique). Confirmed the db.py index is sparse-only (not unique), so multiple demo seeds won't collide.",
+    "/api/v1/status endpoint re-creates a Redis client connection on every poll (every 30s from /status page × N clients). For preview that's negligible but in prod recommend a memoized aioredis singleton or status cache with 5s TTL.",
+    "rate_limit() uses a module-level in-memory dict (_rate_buckets) — per worker only. With Gunicorn workers > 1 the effective per-IP limit becomes per_min × workers. Consider Redis-backed token bucket for prod (mentioned in RUNBOOK is recommended).",
+    "Status overall='degraded' is currently driven exclusively by Redis. If Redis is *expected* to be absent in preview, consider treating its 'degraded' as 'optional' so overall stays 'operational' when only optional services are degraded — purely cosmetic for the public status page."
+  ],
+  "updated_files": [
+    "/app/test_reports/pytest/phase12_admin_ops.xml (NEW)",
+    "/app/test_reports/iteration_16.json (NEW)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "admin@prosper.foundation (super_admin) and client.admin@alemany.capital (client_admin) via GET /api/v1/auth/dev-login. /app/memory/test_credentials.md present and current. PROSPER_DISABLE_RATELIMIT=1 set in /app/backend/.env.",
+  "seed_data_creation": "One new demo org was seeded during frontend testing: org_demo_191db6 / usr_demo_191db6 / client.admin@demo-191db6.local — kyb_status=approved, principal_usd≈$293,762.84, tx_count=2, position_count=1. Marked is_demo=true so a future wipe-demo run will clean it. test_phase12 backend also seeded one additional demo org via test_seed_demo_client_creates_org_and_user (deliberate; no cleanup per the test's own comment).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 12 is fully green. Backend 6/7 phase12 tests pass (1 destructive skip). Frontend /status, /terms, /privacy, /admin/clients 'Crear demo seedeado' button all live-verified. Security headers + 8-service status payload + indices + docs files + E2E scaffolding (TS-clean) all confirmed. Live 429 rate-limit test was NOT executed because env-bypass is on for preview — code-inspected to be correct. Two extra demo orgs (org_demo_191db6 + the one created by pytest) now exist; ops should run wipe-demo before promoting to staging. PROSPER_DISABLE_RATELIMIT=1 must be flipped off in staging/prod env.",
+  "rca of the issue": "N/A — no blocking issues found. /status overall=degraded is expected (Redis intentionally absent in preview, documented in review_request)."
+}

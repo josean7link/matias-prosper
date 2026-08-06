@@ -1,0 +1,56 @@
+{
+  "summary": "Phase 17 (ARSa chain selection: Stellar | Base) — full backend + frontend verification. All 11 backend tests pass (admin GET/PUT global, per-account override get/set/clear, role-based 403, invalid-chain 422, unknown-ECID 404, audit-log writes, chain-resolver-in-create-account using mock provider mode, plus phase-14/15/16 smoke). Frontend ArsaChainPanel renders with data-testid='arsa-chain-panel', edit→pick→save round-trip works against the backend (Base → Stellar → Base restore verified visually with success toast 'Cadena ARSa default → base').",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/v1/ramp/accounts/{ecid}/balances",
+        "issue": "In mock provider mode, balances rows for ARSa still come back with chain='stellar' even when the underlying ramp_wallets row was correctly minted with chain='base'. The chain resolver IS correct at wallet-creation time (verified directly in Mongo), but the balances endpoint forwards whatever chain the mock gateway echoes (always 'stellar'). Not a blocker for production (REAL mode uses the actual minted wallet chain), but inconsistent. Consider overriding the balance row chain with the wallet's chain at projection time in ramp_routes.py around line 540-560."
+      },
+      {
+        "endpoint": "audit_logs",
+        "issue": "Audit entries for admin.ramp.arsa_chain.set_global / set_account are written (count increments verified) but actor_email is null in the document. The action+metadata are correct; actor lookup just isn't being persisted. Same pattern likely affects all phase-17 audit calls (probably a missing user attribute on the log_action helper for this action type)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "ArsaChainPanel current-chain Badge",
+        "issue": "data-testid='arsa-chain-current' is passed as a prop to the shared <Badge/> component in /app/packages/ui/src/Badge.tsx but Badge does NOT forward arbitrary props onto the rendered <span>. Result: the testid is silently dropped and Badge instead emits its own auto-generated `data-testid='badge-red-default---base'`. Cosmetic only — the visible UI is correct — but breaks the documented selector for automated tests.",
+        "selector": "[data-testid='arsa-chain-current']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase17_arsa_chain.py",
+    "/app/test_reports/pytest/phase17_arsa_chain.xml"
+  ],
+  "action_items": [
+    "(Optional) Forward data-testid (or accept ...rest) in /app/packages/ui/src/Badge.tsx so the arsa-chain-current selector resolves as authored.",
+    "(Optional) In ramp_routes.py /accounts/{ecid}/balances, override the balance row's chain field with the resolved/wallet chain instead of trusting the upstream provider echo (matters for mock mode parity; harmless in real mode).",
+    "(Optional) Audit-log: ensure log_action persists actor_email for admin.ramp.arsa_chain.set_global / set_account."
+  ],
+  "critical_code_review_comments": [
+    "chain_config.resolve_arsa_chain_with_source correctly precedences account_override → org_override → global → env_default; round-trip verified end-to-end.",
+    "ramp_routes.create_account → ensure_org_ramp_account now passes through chain=None and the helper invokes resolve_arsa_chain — confirmed via Mongo inspection that a new throw-away ECID got a ramp_wallets row with chain='base' when global default was 'base'.",
+    "Authorization split is correct: _WRITE_ROLES = {super_admin, finance_admin} — ops/admin role correctly receives 403 on PUT (verified). Read endpoints accessible to broader backoffice roles.",
+    "admin_ramp.py is now 778 lines — close to the 700-line guideline. Recommend splitting Section F (ARSa chain) into a dedicated router file in a future cleanup."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase17_arsa_chain.py"
+  ],
+  "success_rate": {
+    "backend": "100% (11/11 pytest)",
+    "frontend": "100% (panel render + edit/save round-trip)"
+  },
+  "test_credentials": "admin@prosper.foundation (super_admin) and ops@prosper.foundation (admin role, no write) via /api/v1/auth/dev-login. Org used: org_seed_alemany. Throw-away ECID prefix: test_phase17_*.",
+  "seed_data_creation": "Test creates a transient ramp_account + ramp_wallets row keyed by a random test_phase17_<hex> ECID in mock provider mode, then deletes it (account, wallets, balances, fiat_accounts) in the finally block. No persistent data left behind. The real org_seed_alemany Andes Prod wallet (0x56724B35a02078d193335764e064f2FA5DC5a043) was NOT touched.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Provider config was restored to whatever the chain-resolver test fixture found at entry (currently mode='sandbox', provider='andeslabs', default_arsa_chain='base'). If you need REAL Andes Prod calls, PUT /api/v1/admin/ramp/provider-config {provider:'andeslabs', mode:'real', enabled:true}. ANDES_GATEWAY_MODE supervisor env is independent of this DB-stored 'mode' label. Phase 17 endpoints are fully wired and exercised — no further re-test needed unless code in admin_ramp.py Section F (lines ~600-778), ramp/chain_config.py, or ArsaChainPanel changes.",
+  "rca_of_the_issue": "N/A — all primary acceptance criteria pass. Two minor follow-ups (Badge testid forwarding, balances chain echo, audit actor_email) documented under action_items."
+}

@@ -1,0 +1,37 @@
+{
+  "summary": "Verified Admin Portal EN/ES i18n (iteration_36). Authenticated as super_admin via dev-login magic link, exercised the locale toggle on 17 admin surfaces plus the home + clients + 3 sub-layouts. ALL checks pass. Sidebar, Admin Home, Operations/Business/Compliance sub-layout subnavs, Clients list page (header + filter + table + buttons), and PageHeader (kicker + title + subtitle) on every page in the request's scope translate cleanly between EN and ES, including the sanctions custom header ('Screening queue / Cola de screening'). Locale toggle persistence via cookie `prosper_locale` works across navigations. Per agent-to-agent note, table-row content / KPI tooltips / embedded chart subtitles ('Tendencia diaria', 'Operations Queue', integration health strip labels) are intentionally left untranslated and were NOT flagged.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Optional/non-blocking: `Phase X · Y` numerals (e.g. `Phase 3 · Operations`) are hardcoded inside the en.json/es.json kicker strings instead of interpolation. Works today, but if phases are renumbered both dictionaries must stay in lockstep."
+  ],
+  "checks_status": {
+    "T1_sidebar_EN": "PASS — Home, Operations, Business, Compliance, Clients, Ramp · accounts, Ramp · movements, Ramp · international, Ramp · stats, Ramp · webhooks, Ramp · provider, Integrations.",
+    "T2_sidebar_ES": "PASS — Inicio, Operaciones, Negocio, Compliance, Clientes, Rampa · cuentas, Rampa · movimientos, Rampa · internacional, Rampa · stats, Rampa · webhooks, Rampa · proveedor, Integraciones.",
+    "T3_admin_home_EN": "PASS — kicker 'Phase 2 · Operations' / title 'Admin Home' / subtitle 'Real-time view of AUM, revenue, on-chain volume and operations queue.' + 'Refresh' button.",
+    "T4_admin_home_ES": "PASS — kicker 'Fase 2 · Operaciones' / title 'Admin Home' / subtitle 'Vista en tiempo real de AUM, revenue, volumen on-chain y cola operativa.' + 'Actualizar' button.",
+    "T5_admin_home_kpi_flip": "PASS — Volume / Active Clients / Ops Queue ↔ Volumen / Clientes activos / Cola operativa. AUM / NAV / Revenue retained (brand/financial terms).",
+    "T6_operations_subnav": "PASS — EN: 'Ledger, Funds status, By client, Volume'. ES: 'Ledger, Estado de fondos, Por cliente, Volumen'.",
+    "T7_business_subnav": "PASS — EN: 'Clients, Revenue, Yields, Cohorts'. ES: 'Clientes, Revenue, Rendimientos, Cohortes'.",
+    "T8_compliance_subnav": "PASS — EN: 'KYC, KYB, Sanctions, KYT, Risk, Alerts, Limits'. ES: 'KYC, KYB, Sanctions, KYT, Riesgo, Alertas, Límites'.",
+    "T9_clients_list_page": "PASS — EN: 'Phase 6 / Clients / Organizations registered with Prosper · onboarding, access, API keys, webhooks.' + buttons 'Create demo seed / New client' + column 'Country/Type/Env/KYB/Volume/Created' + filter 'Type'. ES: 'Fase 6 / Clientes / Organizaciones registradas en Prosper · onboarding, accesos, API keys, webhooks.' + 'Crear demo seedeado / Nuevo cliente' + 'País/Tipo/Env/KYB/Volumen/Alta' + 'Tipo'.",
+    "T10_operations_inner_pages": "PASS — /admin/operations/{transactions,funds,by-client,volume-by-client}: kicker + title + subtitle all flip. Funds uses 'Phase 3 · Funds / Fase 3 · Fondos'; others 'Phase 3 · Operations / Fase 3 · Operaciones'.",
+    "T11_business_inner_pages": "PASS — /admin/business/{clients,revenue,yield,cohorts}: 'Phase 4 · Business / Fase 4 · Negocio' kicker + titles ('Revenue for Prosper'/'Revenue para Prosper', 'Yields by client'/'Rendimientos por cliente', 'Cohort analysis'/'Análisis de cohortes') + subtitles all translate.",
+    "T12_compliance_inner_pages": "PASS — /admin/compliance/{kyb,kyc,kyt,risk,alerts,limits}: 'Phase 5 · Compliance / Fase 5 · Compliance' kicker + bilingual title + subtitle. /admin/compliance/sanctions uses custom kicker 'Compliance · Sanctions / PEP screening' and title 'Screening queue / Cola de screening' — matches spec.",
+    "T13_rampa_inner_pages": "PASS — /admin/rampa/{cuentas,movimientos,stats,webhooks,internacional}: titles 'Andes accounts/Cuentas Andes', 'Movements · Andes/Movimientos · Andes', 'Ramp · project stats/Rampa · stats del proyecto', 'Webhooks · Andes' (identical EN/ES — brand), 'International off-ramp/Off-ramp internacional' all translate.",
+    "T14_locale_persistence": "PASS — clicked [data-testid=locale-toggle-es] on /admin/clients, then navigated /admin/operations → /admin/business/revenue → /admin/compliance/risk → /admin/rampa/stats WITHOUT touching the toggle. Sidebar remained ES on every page and titles rendered in Spanish. Cookie `prosper_locale=es` confirmed via context.cookies()."
+  },
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not tested (frontend-only)",
+    "frontend": "100% — 14/14 in-scope checks passed across 17 admin pages + sidebar + 3 sub-layouts + persistence."
+  },
+  "test_credentials": "Used dev magic link: GET /api/v1/auth/dev-login?email=admin@prosper.foundation&next=/admin (role=internal_admin/super_admin).",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Admin Portal i18n is FEATURE-COMPLETE for the headers/sidebar/subnav/clients-list scope from iteration_36. Locale toggle (data-testid=locale-toggle-en|locale-toggle-es) lives on every admin page in the topbar; cookie `prosper_locale` drives next-intl. Inner table column headers (DataTable bodies), KPI hover-tooltip copy, chart subtitles ('Tendencia diaria', 'Conteo diario', 'Operations Queue') and the 'Connection health' integration strip are STILL mixed EN/ES by design and were INTENTIONALLY out of scope — do not flag those unless explicitly asked. NOTE: I cleared /app/frontend/.next/cache and /root/.emergent/automation_output to free disk (was 100% full → 274MB free) so the report could be written.",
+  "rca_of_issues": "No issues found in this iteration."
+}

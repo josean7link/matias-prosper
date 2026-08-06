@@ -1,0 +1,47 @@
+{
+  "summary": "Sprint 11B (Portal Cliente - Profile Hardening) end-to-end tested. Backend pytest test_phase11b_profile.py: 11/11 PASS — covers extended profile GET/PATCH shape + bad-tz rejection, avatar upload/delete + 413 oversize, full MFA cycle (setup→verify with live pyotp code→10 backup codes XXXX-XXXX→disable via backup), MFA bad-code 401, sessions list with is_current + self-revoke causing 401, revoke-others keeping current, notifications PATCH persistence, deletion request email-mismatch 400 + matching success + cancel. Frontend /client/profile loads all 5 tabs (profile-tab-account/security/sessions/notifications/danger) reachable from sidebar nav-perfil. Cuenta tab: editing full_name enables profile-save which PATCHes successfully and toast 'Datos guardados' appears (verified field persists). Seguridad tab: mfa-enable-btn opens scan step (mfa-qr <img data:png>, mfa-secret-manual, mfa-cancel, mfa-scan-continue), entering live pyotp code reveals mfa-backup-codes block with backup-code-0..9 (all 10 visible as XXXX-XXXX), backup-copy + backup-download + backup-done buttons. Profile flips to MFA ACTIVO. Sesiones tab: each row has session-{id} + session-revoke-{id} testids; current session is text-tagged 'Esta sesión' and shows 'Cerrar y salir' (full revoke-self) while non-current rows show plain 'Cerrar'. Notificaciones tab: 6 toggle testids (notif-email_security_alerts, notif-email_account_activity, notif-email_yield_summary, notif-email_marketing, notif-inapp_alerts, notif-inapp_transactions) + notifications-save. Eliminar cuenta tab: request-deletion-btn opens deletion-modal (deletion-confirm-email + deletion-reason + deletion-cancel + deletion-confirm); submitting with matching email transitions to pending state.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "missing_data_testids": [
+      {"page": "/client/profile (Sesiones tab)", "missing": ["session-current-badge", "session-row-current"], "note": "Current session is communicated only via the visible text 'Esta sesión' and the longer button label 'Cerrar y salir' (vs plain 'Cerrar' on others). A dedicated data-testid (e.g. session-current-badge on the row or session-revoke-current-btn) would simplify E2E assertions. Functionality is correct."},
+      {"page": "/client/profile (Seguridad tab MFA verify step)", "missing": ["mfa-code-input", "mfa-verify-submit"], "note": "Cleanup-test selectors during verify-step relied on input[inputmode=numeric]. Adding testids would harden the playbook."}
+    ],
+    "console_warnings": [
+      {"observation": "Same generic 403 'Failed to load resource' noise on every /client/* page noted since iteration_13. Unchanged in 11B."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase11b_profile.py",
+    "/app/test_reports/pytest/phase11b_profile.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid 'session-current-badge' (or similar) on the current session row in SessionsTab to avoid relying on text 'Esta sesión'.",
+    "(Optional) Add data-testid 'mfa-code-input' and 'mfa-verify-submit' on the MFA verify step in SecurityTab.",
+    "(Pre-existing, low) Investigate the 3-6 generic 403 console errors emitted on every /client/* page — present since iteration_13, not introduced by 11B."
+  ],
+  "critical_code_review_comments": [
+    "client_profile.py (~512 lines) is well under the 700-line threshold but already covers 4 concerns (profile/avatar/MFA/sessions/notifications/deletion). When Sprint 12 adds more, consider splitting into client_mfa.py + client_sessions.py + client_account.py.",
+    "TIMEZONES_WHITELIST in client_profile.py is a hard-coded tuple of 12 zones. Frontend timezone dropdown must stay in sync — currently no shared constant. Consider exposing GET /v1/client/profile/timezones or moving the list to a shared schemas module.",
+    "/v1/client/avatar accepts any data:image/* MIME via prefix check but does not validate the actual decoded bytes are a real PNG/JPEG (no magic-byte sniff). A user could store data:image/png;base64,<arbitrary base64 ≤256KB>. Low risk (the URL is only ever echoed back to the same user) but worth a Pillow validation.",
+    "_consume_backup uses $pull on the bcrypt hash list — correct, but bcrypt verifies are sequential (10 codes × ~50ms = 500ms worst case). Acceptable for /disable but consider indexing by code prefix if scaled.",
+    "request_deletion writes deletion_effective_at as ISO string at request time. A background job to actually disable the user after 7 days is NOT yet present (audit log only). Confirm ops process is wired before promoting to prod, and add a daily cron that flips users with deletion_effective_at < now() to status='deleted'.",
+    "_qr_data_url uses fill_color='#0B0F19' on white — fine for light theme but contrast may be reduced on dark theme (the image is a PNG so it doesn't react to theme). Consider rendering with theme-aware colors or adding a white background card around the <img>."
+  ],
+  "updated_files": [
+    "/app/test_reports/pytest/phase11b_profile.xml (NEW)",
+    "/app/test_reports/iteration_15.json (NEW)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "client.admin@finpact.io and client.admin@alemany.capital via GET /api/v1/auth/dev-login?email=...&next=/client/profile. MFA_FERNET_KEY confirmed present in /app/backend/.env. pyotp used to compute live TOTP codes during frontend MFA verify.",
+  "seed_data_creation": "During frontend test: full_name on client.admin@alemany.capital was set to 'Test User QA' (visible in Cuenta tab). MFA was briefly enabled on client.admin@finpact.io during the frontend MFA happy-path test then disabled via backup code YPMA-12S5 (cleanup verified — profile.mfa_enabled=False). Deletion request was raised + cancelled on the same account via UI. Many session rows accumulated on alemany.capital from prior dev-login calls (29 visible) — does not block flows.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sprint 11B is solid: 11/11 backend pytest + all 5 frontend tabs verified with live integrations (MFA enroll + verify + backup codes + disable, account deletion request modal, notifications toggle group, sessions list with current indicator, avatar upload buttons, profile PATCH with toast). Two minor testid gaps documented (Sessions current-badge, MFA verify step inputs). Cleanup completed for finpact account; alemany account retains 'Test User QA' as full_name and ~29 session rows that should be culled before next Sprint testing. No regressions vs iteration_14.",
+  "rca of the issue": "N/A — no blocking issues found. All P0 requirements from the review_request are satisfied end-to-end."
+}

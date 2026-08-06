@@ -1,0 +1,28 @@
+{
+  "name": "andes-gateway",
+  "version": "0.1.0",
+  "description": "Internal Node gateway that wraps the @andeslabs/mint-sdk for the FastAPI backend (Phase 13: skeleton only, Phase 14: real SDK calls).",
+  "private": true,
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@andeslabs/mint-sdk": "^3.0.0",
+    "@fastify/multipart": "^8.3.0",
+    "fastify": "^4.28.1",
+    "pino": "^9.0.0"
+  },
+  "//phase14-deps": "Add `@andeslabs/mint-sdk` here when wiring real calls.",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}

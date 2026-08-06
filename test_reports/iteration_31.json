@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend-only retest for P1-1: /client/cargar-usdc page + updated /client dashboard (4-button action row, KPI hints with rail splits). 11 of 13 spec items pass. 2 issues found: (a) HIGH — Dashboard 'Saldo USDC libre' KPI hint is hardcoded to 'Por transferir al protocolo' and does NOT show the required 'Plataforma <n> USDC · Stellar <n> USDC' breakdown (ARSa hint works correctly). (b) MEDIUM/CRITICAL UX — the 'end' modality wallet address is rendered as the literal placeholder 'GA…ALEMANY' (10 chars, not a Stellar address). It is visible to the user, encoded in the QR, and embedded in the Stellar Expert link (broken). Main agent already flagged the legacy seed in the request, but on a 'send funds here' page this is a real safety hazard and should be backfilled with a real Stellar G-address.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/v1/client/deposit-wallets", "issue": "'end' modality wallet.address returned as legacy placeholder 'GA…ALEMANY' (10 chars) for org_seed_alemany. UX-critical because the page renders/QR/expert-link this as a real receive address. Needs CMS reprovisioning or seed cleanup."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "/client page.tsx KpiCard 'Saldo USDC libre'", "issue": "hint is hardcoded to 'Por transferir al protocolo'. Spec requires the same Plataforma/Stellar split rendered for ARSa: `Plataforma ${cash.usdc_platform} USDC · Stellar ${cash.usdc_stellar} USDC`. Both fields are already in DashboardSummary.cash but unused.", "selector": "[data-testid='kpi-row-usdc']", "priority": "HIGH"}
+    ],
+    "integration_issues": [
+      {"flow": "cargar-usdc 'end' modality", "issue": "UI surfaces a 10-char placeholder address 'GA…ALEMANY'. QR encodes it. Stellar Expert href becomes https://stellar.expert/explorer/public/account/GA…ALEMANY (404). User following the on-screen instructions would attempt to paste a non-Stellar address into Lobstr/Freighter.", "affected_selectors": ["[data-testid='cargar-usdc-address']","[data-testid='cargar-usdc-qr']","[data-testid='cargar-usdc-expert']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [".screenshots/cargar_usdc_after_ack.png", ".screenshots/dashboard.png", ".screenshots/finpact_blocked.png"],
+  "action_items": [
+    "Fix /app/frontend/src/app/client/page.tsx KpiCard 'Saldo USDC libre' hint to render `Plataforma ${fmtNative(cash.usdc_platform,'USDC')} · Stellar ${fmtNative(cash.usdc_stellar,'USDC')}` (mirror the ARSa pattern at line 119).",
+    "Backfill the 'end' modality wallet for org_seed_alemany with a real Stellar G-address via the CMS cashin endpoint (or remove the legacy 'GA…ALEMANY' placeholder so the page falls back to a 'create wallet' state). Until fixed the UI is showing an invalid receive address — high risk of user confusion."
+  ],
+  "critical_code_review_comments": [
+    "cargar-usdc/page.tsx onCopy() awaits navigator.clipboard.writeText without try/catch — if browser denies clipboard permission, setCopied(true) and toast.success() never run, the button stays as 'Copiar dirección' with no feedback. Wrap in try/catch + toast.error fallback.",
+    "Page.tsx renders the address with `break-all` so a 56-char real Stellar address wraps fine, but the legacy placeholder 'GA…ALEMANY' is being treated as the actual on-chain address (it is). Consider client-side validation: if /^G[A-Z2-7]{55}$/.test(wallet.address) is false, show a 'Wallet aún no provisionada' state instead of the receive UI.",
+    "Action button 'action-invest' links to /client/invest in code (line 181). Spec snippet didn't specify a target href for action-invest, so this is OK, but worth confirming with main agent that /client/invest is the intended target (previous flows used /client/investments)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not retested (per request)", "frontend": "85%"},
+  "test_credentials": "Approved: client.admin@alemany.capital (can_operate=true, KYB approved). Non-approved: client.admin@finpact.io (kyb_status=pending, can_operate=false). Both via /api/v1/auth/dev-login?email=… magic link.",
+  "seed_data_creation": "None.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Verification steps that PASSED on this run: (1) page renders with correct PageHeader title and 'CMS · Transferencia Stellar nativa' kicker; (2) cargar-usdc-warning visible with red border and both required phrases ('ÚNICAMENTE en la red Stellar', 'pérdida total e irreversible'); (3) cargar-usdc-address-card initially has classes 'opacity-40 pointer-events-none select-none blur-sm', and after clicking cargar-usdc-ack the blur-sm class is removed and a green '✓ Confirmado · podés continuar' line appears; (4) modality picker: clicking cargar-usdc-modality-month switches the displayed address to a DIFFERENT one (end='GA…ALEMANY' [placeholder!], month='GDHQFTLNKHSRECW7FTOBXDDAZU2JTJGEB3WVWRMBV6ROSGCCGG4DRLDF' [real 56-char Stellar G-address]); (5) QR is an SVG with data-testid='cargar-usdc-qr' wrapped in cargar-usdc-qr-wrap; (6) cargar-usdc-copy works correctly with clipboard permission granted — toast 'Dirección copiada al portapapeles' appears via sonner, button switches to '✓ Copiado' then reverts to 'Copiar dirección' after ~2.5s, clipboard verified to contain full 56-char address; (7) cargar-usdc-expert href = https://stellar.expert/explorer/public/account/<addr> matching the displayed address; (8) cargar-usdc-instructions card has exactly 5 <li> items mentioning Lobstr, Freighter, USDC (red Stellar), No hace falta agregar memo, and a working link to /client/investments; (9) Dashboard /client renders 4 enabled action buttons: action-load-usdc→/client/cargar-usdc, action-load-arsa→/client/onramp, action-invest→/client/invest, action-withdraw→/client/offramp; (10) ARSa KPI hint shows 'CVU 601.234,56 ARSa · Stellar 0,00 ARSa' — matches pattern; (11) Negative test for finpact.io renders the cargar-usdc-blocked state with 'Tu KYB no está aprobado' phrase. IMPORTANT for next agent: playwright clipboard tests require explicit page.context.grant_permissions(['clipboard-read','clipboard-write'], origin=URL) before the copy assertion will pass.",
+  "rca_of_issues": {
+    "usdc_kpi_hint_missing_split": "In /app/frontend/src/app/client/page.tsx line 147-151, the KpiCard for 'Saldo USDC libre' has a string-literal hint='Por transferir al protocolo'. Compare with ARSa version at lines 116-121 which correctly uses a conditional template literal with cash.arsa_cvu / cash.arsa_stellar. The backend DashboardSummary.cash already exposes usdc_platform and usdc_stellar fields (declared in the same file at lines 24-30) so the data is present — only the JSX render is wrong. One-line fix.",
+    "end_wallet_placeholder": "Backend /api/v1/cms/deposit-wallets returns address='GA…ALEMANY' for the end-modality wallet of org_seed_alemany. This is a 10-character literal placeholder backfilled from the legacy seed, not a real Stellar G-address (which must be 56 chars). The frontend renders it as-is in <code data-testid='cargar-usdc-address'>, encodes it in the QRCodeSVG, and templates it into the Stellar Expert href. Main agent acknowledged this in the review-request context but classified it as 'harmless'. Real-world risk: a user pastes 'GA…ALEMANY' into Lobstr → wallet rejects it as invalid → user is confused or, worse, ignores the rejection and finds another way to send (e.g., raw stroop transfer attempt) → funds at risk. Mitigation: either backfill with a real CMS-provisioned address or special-case the UI to hide the receive panel when the address fails the 56-char Stellar regex."
+  }
+}

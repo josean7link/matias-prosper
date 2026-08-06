@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend retest of P1-1 after main agent's two fixes. ALL 16 verifications pass (16/16, 100%). (1) /client dashboard 'Saldo USDC libre' KPI hint now renders 'Plataforma 0,00 USDC · Stellar 0,00 USDC' — mirrors the ARSa pattern exactly. (2) /client/cargar-usdc 'end' modality now shows a valid 56-char Stellar G-address (GDHQFTLNKHSRECW7FTOBXDDAZU2JTJGEB3WVWRMBV6ROSGCCGG4DRLDF) — no more 'GA…ALEMANY' placeholder. Stellar Expert href is fully qualified. 'month' modality returns the SAME 56-char Stellar address (per partner-side decision, confirmed expected by main agent). All 11 previously-passing items (warning visible, ack-gate, 5 instructions, 4 action buttons, ARSa hint, QR SVG, modality switching) still pass.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Defensive UX (carry-over from iter 31, low priority): /client/cargar-usdc could still add a client-side regex guard /^G[A-Z2-7]{55}$/ on wallet.address so that if the backend ever serves an invalid value again, the receive UI degrades to a 'Wallet aún no provisionada' state instead of rendering an unusable QR/link. Backend now validates server-side (_is_valid_stellar_address in onramp_flow.py) so this is purely belt-and-braces.",
+    "Carry-over from iter 31 (low priority): cargar-usdc/page.tsx onCopy() does not wrap navigator.clipboard.writeText in try/catch — silent failure if clipboard permission denied. toast.error fallback recommended."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "not retested (per request)", "frontend": "100%" },
+  "test_credentials": "client.admin@alemany.capital (canOperate=true) via /api/v1/auth/dev-login. End-modality wallet address verified: GDHQFTLNKHSRECW7FTOBXDDAZU2JTJGEB3WVWRMBV6ROSGCCGG4DRLDF.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 32 fully validates both P1-1 fixes. USDC KPI hint pattern now reads `Plataforma ${cash.usdc_platform} USDC · Stellar ${cash.usdc_stellar} USDC` (page.tsx line 150-152). Both end/month modalities serve the SAME real Stellar G-address — this is partner-side (CMS) behavior and NOT a defect. Test selectors used: cargar-usdc-warning, cargar-usdc-ack, cargar-usdc-address, cargar-usdc-qr, cargar-usdc-expert, cargar-usdc-modality-end, cargar-usdc-modality-month, cargar-usdc-instructions, kpi-row-arsa, kpi-row-usdc, action-load-usdc/arsa/invest/withdraw. Regex used: /^G[A-Z2-7]{55}$/ — both addresses match. No further retest needed for P1-1.",
+  "rca_of_issues": "N/A — both previously-flagged bugs (USDC KPI hint hardcoded, end-modality placeholder address) are fully resolved."
+}

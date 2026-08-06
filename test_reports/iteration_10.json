@@ -1,0 +1,49 @@
+{
+  "summary": "FASE 6 — Módulo Clientes: Full backend + frontend testing. All 26 backend pytest cases passing covering CRUD, RBAC (super_admin OK, client_admin/compliance 403), signed JWT links (verify + consume + no-reuse), per-client users (invite/patch/revoke), API keys plaintext-once (GET excludes plaintext/secret_hash, rotate returns new plaintext), webhooks (create returns secret once, GET hides secret, real httpbin delivery with HMAC X-Prosper-Signature returning http_code=200, reveal-secret), outbound emails preview_only mode with text/html preview endpoint, and audit-log entries. Frontend: client listing (25 rows, search, 3 filter groups, '+Nuevo cliente' btn) loads cleanly. Detail page renders 9 tabs (Información, Usuarios, KYB Docs, API Keys, Webhooks, Posiciones, Transacciones, Compliance, Audit Log) + 4 header buttons. KYB link button copies signed token to clipboard. New-client form has 20 data-testid fields and submit disabled until validation passes. Audit log timeline shows clients.create/patch/pause/reactivate/link.* with expandable meta JSON. Webhooks tab shows per-row reveal/test/expand/delete testids. Backend success_rate: 100% (26/26). Frontend success_rate: ~95% (one design issue: native browser date picker used instead of shadcn Calendar).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/admin/clients/new",
+        "issues": [
+          "FECHA ESTIMADA DE INICIO uses native HTML date input (mm/dd/yyyy browser picker) instead of shadcn Calendar/DatePicker component — inconsistent with the rest of the design system",
+          "Tier, Tipo, País, Ambiente fields use native <select> dropdowns instead of shadcn Select component (minor visual inconsistency)"
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase6_clients.py",
+    "/app/test_reports/pytest/phase6_clients.xml"
+  ],
+  "action_items": [
+    "(Optional polish) Replace native date input on /admin/clients/new with a shadcn Calendar / DatePicker component for visual consistency.",
+    "(Optional polish) Replace native <select> elements (country, type, env, tier) with shadcn Select for consistency."
+  ],
+  "critical_code_review_comments": [
+    "Security regression test PASSING: POST /api/v1/admin/clients/{org}/api-keys returns 'plaintext' + warning; subsequent GET excludes both 'plaintext' and 'secret_hash' (verified across all items). Same pattern holds for webhooks (POST returns 'secret', GET hides it). This is the most important invariant in this phase and it holds.",
+    "Signed JWT consume is single-use: second attempt returns 401 'Link already used or expired' as expected — replay protection works.",
+    "RBAC consistently enforced across all write endpoints (POST/PATCH/pause/reactivate): client_admin → 403. compliance_officer → 403 on create.",
+    "Webhook test delivery to https://httpbin.org/anything returns 200 and the delivery log persists the http_code correctly — signed HMAC header pipeline works end-to-end.",
+    "RESEND_API_KEY is intentionally empty → all outbound emails saved with status='preview_only' and full HTML retrievable via /emails/{id}/preview (Content-Type: text/html). MOCKED INTEGRATION confirmed working as designed.",
+    "Code quality: admin_clients router cleanly split into 7 files (crud/users/links/api_keys/webhooks/emails/_deps). Good separation of concerns."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase6_clients.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "95%"},
+  "test_credentials": "admin@prosper.foundation (super_admin), client.admin@alemany.capital (client_admin → 403), compliance@prosper.foundation (compliance_officer → 403). All via /api/v1/auth/dev-login?email=<email>",
+  "seed_data_creation": "Test creates org with tax_id=TEST-<uuid> and legal_name=TEST_Corp_<uuid> SA each module-scoped fixture run. Cleanup not automated — existing test orgs visible in listing as TEST_Corp_* (no impact, identifiable by TEST_ prefix).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "mocked_integrations_confirmed": [
+    "Resend → preview_only outbound emails (RESEND_API_KEY empty)",
+    "httpbin.org/anything used as real webhook target — returns 200 echoing payload, suitable for delivery log verification"
+  ],
+  "context_for_next_testing_agent": "FASE 6 backend is solid. Regression suite at /app/backend/tests/test_phase6_clients.py runs in ~5s and is safe to re-execute (TEST_ prefixed data). PUBLIC_BASE_URL env var defaults to the preview host. If new event types are added to webhooks, the available_events list at GET /api/v1/admin/clients/{org}/webhooks is the source of truth. For pytest: `pytest backend/tests/test_phase6_clients.py -v`. RBAC test session uses dev-login cookies — no MFA needed."
+}

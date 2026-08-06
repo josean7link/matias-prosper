@@ -1,0 +1,23 @@
+{
+  "name": "prosper-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prosper · Tokenized yield on Stellar — monorepo (Phase 0 bootstrap).",
+  "workspaces": [
+    "apps/client",
+    "packages/*",
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:admin":  "cd frontend && yarn dev",
+    "dev:client": "cd apps/client && yarn dev",
+    "dev:api":    "cd backend && /root/.venv/bin/uvicorn server:app --host 0.0.0.0 --port 8001 --reload",
+    "build:admin":"cd frontend && yarn build",
+    "lint":       "cd frontend && yarn lint",
+    "typecheck":  "cd frontend && yarn typecheck",
+    "test":       "cd frontend && yarn test && cd ../backend && /root/.venv/bin/python -m pytest -q",
+    "compose":    "docker compose up -d"
+  },
+  "packageManager": "yarn@1.22.22"
+}

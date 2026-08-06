@@ -1,0 +1,26 @@
+{
+  "summary": "Phase 18 end-to-end testing — Stellar wallet provisioning with pending→active lifecycle. All 8 pytest backend cases passed (default chain, wallet pending→active, refresh-wallet-status, deposit-while-pending race + release, webhook idempotency, dispatch table, phase 14/15/16/17 regression). Frontend verified across rampa page (arsa-addresses-panel with issuer/SAC/Base addresses and 'no es Soroban' clarification), admin client → Cuenta Andes tab (badge=WALLET·ACTIVA, refresh button working, stellar.expert explorer link), client portal in both wallet states (banner appears+buttons disabled when pending, banner hidden + buttons enabled when active; NO Memo/destination tag ever shown). Mock gateway 800ms auto-activate race exercised — held deposit was correctly flipped to Success+released_at on wallet.active with balance bumping to 12345. org_seed_alemany ramp account & wallet restored to active state before finishing. No test_p18_* leftovers in DB.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_phase18_wallet_activation.py",
+    "/app/test_reports/pytest/phase18_wallet_activation.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ramp_routes.py is now ~1000+ lines; consider splitting wallet-status enrichment, account CRUD, and balances/movements into separate modules for maintainability.",
+    "Mock gateway 800ms auto-activate timer is hardcoded in andes-gateway/src/server.ts — consider making it configurable via env (ANDES_MOCK_WALLET_ACTIVATE_MS) so tests can shrink/expand the race window deterministically without code change.",
+    "Held-deposit release relies on _handle_wallet_active scanning ramp_movements with held_for_wallet_activation=true — confirm an index exists on (provider_user_id, held_for_wallet_activation) to avoid coll-scan as volume grows.",
+    "Idempotency for /internal/ramp/webhook is keyed on delivery_id; second call returned {ok:true, duplicate:true} as expected. Consider also asserting signature in non-dev mode (currently signature_valid:true is accepted from request body — trust boundary depends on X-Internal-Token only)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase18_wallet_activation.py (NEW)"
+  ],
+  "success_rate": { "backend": "100% (8/8)", "frontend": "100%" },
+  "test_credentials": "super_admin via /api/v1/auth/dev-login?email=admin@prosper.foundation; client.admin@alemany.capital → /client; Gateway X-Internal-Token=dev-internal-token-change-me",
+  "seed_data_creation": "Test ECIDs under prefix test_p18_* (auto-cleaned in finally). org_seed_alemany ramp_wallets temporarily flipped to status=pending to assert client-portal banner, then RESTORED to status=active with activated_at=2026-06-03T09:47:20Z. Final DB state: 0 test_p18 accounts, 0 p18_user wallets, alemany seed wallet active.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 18 fully green. Gateway still in MOCK mode (ANDES_GATEWAY_MODE=mock); mock auto-fires wallet.active 800ms after POST /wallets for Stellar. For deposit-while-pending race testing, gateway POST /dev/fire-webhook with X-Internal-Token within ~700ms window of /accounts creation reliably reproduces the held movement → released flow. Test file at /app/backend/tests/test_phase18_wallet_activation.py is the regression suite — re-run with: pytest backend/tests/test_phase18_wallet_activation.py -v.",
+  "rca of the issue": "N/A — no bugs found in Phase 18 surface area."
+}

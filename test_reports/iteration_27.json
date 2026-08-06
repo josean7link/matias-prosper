@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 27 — Two-gate activation policy (on_identity_approved helper) + KYC queue unified hydration: 9/9 backend pytest assertions PASS, frontend KYC queue UI verified with Matías Plano visible as ANDES/in_review row. The synchronous bypass via kyc-docs upload is gone (static + runtime asserts), webhook path still gates on sanctions, sanctions clear endpoint triggers full activation, KYC queue now unifies kyc_cases (5 seed) + onboarding_applications (>=21 individual apps with provider=Andes), detail endpoint returns full applicant info incl. andes_kyc_status/sanctions_status/kyb_status, and Matías backfill (org_048b90574cfa) is in the correct state.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/compliance/kyc", "issues": ["Table rows lack data-testid attributes (e.g. kyc-row-{case_id}, kyc-provider-badge, kyc-status-badge) — currently only generic <tr> elements. Adds friction for stable Playwright e2e testing."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter27_activation_helper.py",
+    "/app/test_reports/pytest/iter27_activation.xml"
+  ],
+  "action_items": [
+    "Optional: add data-testid='kyc-row-{case_id}' on KYC queue rows + kyc-provider-badge + kyc-status-badge for stable Playwright selectors.",
+    "Carry-over from iter26: migrate /apply birthdate input from native HTML date picker to shadcn Calendar."
+  ],
+  "critical_code_review_comments": [
+    "routes/onboarding.py L676-677 — the application-level kyb_status mirror (`'approved' if activation_state.get('activated') else 'pending'`) is fine, but it duplicates state that lives canonically on `organizations.kyb_status`. Consider dropping the mirror on `onboarding_applications.kyb_status` and reading from `organizations` directly to avoid drift.",
+    "services/activation.py L122-124 — if `enqueue_screening` raises, the exception is swallowed; org is left with `andes_kyc_status=approved` but NO sanctions_screenings row, and no retry is scheduled. Consider a periodic reconcile job that scans `organizations` where `andes_kyc_status='approved'` and there's no matching `sanctions_screenings` row.",
+    "services/activation.py L108 — `ra_filter` updates with `$or` against `is_deleted=False`, but if a soft-deleted ramp_account exists for that user, CVU never lands. Worth logging when `update_many.matched_count==0` so silent misses are observable.",
+    "routes/compliance/kyc.py — queue endpoint joins kyc_cases + onboarding_applications in-process (no pagination on the application side as far as I can see). For tenants with hundreds of individuals the queue could blow up. Add cursor-based pagination or a limit param + sort guarantee.",
+    "Iter26 carryover still relevant: sanctions auto-decision audit-log entry missing when the screening provider auto-clears (routes/sanctions.py L86-102)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter27_activation_helper.py"
+  ],
+  "success_rate": {"backend": "100% (9/9, 1 conditional skip resolved)", "frontend": "100% — KYC queue renders, Matías Plano visible with provider=Andes + status=in_review + score=100"},
+  "test_credentials": "admin@prosper.foundation via GET /api/v1/auth/dev-login?email=admin@prosper.foundation&next=/admin. GATEWAY_INTERNAL_TOKEN from /app/backend/.env for fiat.account.created webhook simulation.",
+  "seed_data_creation": "Multiple test individual applicants created via /api/v1/onboarding/apply (test.g27.<hex>@gmail.com). Pre-existing test data preserved: org_048b90574cfa (Matías), org_fe19ccef412d (Gate Bypass Test, sanctions=clear, now decided=approve via test 7). Mongo state verified directly for backfill validation.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_iter27_activation_helper.py as regression for the two-gate activation policy. Key invariants tested: (1) webhook never bypasses sanctions; (2) `on_identity_approved` helper is the single activation point — called from BOTH upload_kyc_docs_individual and _handle_fiat_account_created; (3) KYC queue >=26 items (5 seed + >=21 onboarding_applications individual); (4) app_7367c12881fc detail returns andes_kyc_status='approved', sanctions_status='pending', kyb_status='pending'; (5) org_048b90574cfa backfill in correct state (kyb=pending, andes_kyc=approved, sanctions=pending, _indiv_cuit=20280821129, sanctions_screenings row provider=manual subject_cuit=20280821129). Frontend smoke verified on /admin/compliance/kyc — Matías visible as ANDES/in_review row.",
+  "rca of the issue": "Original bug had TWO problems both now fixed: (1) routes/onboarding.upload_kyc_docs_individual previously flipped org.kyb_status='approved' + user.status='active' inline when Andes returned approved synchronously, bypassing sanctions. Now the upload endpoint delegates to services.activation.on_identity_approved which only promotes to kyb_status='approved' if BOTH gates green (identity AND sanctions clear). Confirmed via static source analysis (no direct organizations kyb_status patch in upload body) and the new `andes_kyc_status` field cleanly separates the identity gate from the activation gate. (2) Admin KYC queue at /admin/compliance/kyc read only from kyc_cases (5 seed rows) and missed all real onboarding_applications. Fix: queue endpoint now unions both collections; _map_application_to_case projects applications into the KycCase shape with provider='Andes', case_id='app_<hash>', and live sanctions_status/andes_kyc_status fields. Backfill of Matías Plano (was erroneously kyb=approved before fix) is now kyb=pending, andes_kyc=approved, sanctions=pending — exactly the intended state when identity is verified but sanctions still pending."
+}

@@ -1,0 +1,91 @@
+{
+  "summary": "E2E frontend verification across 14 CHECKS for individuo (maria.test+1780679716@individuo-prosper.io) and partner (client.admin@alemany.capital). 10/14 PASS · 2/14 FAIL · 2/14 BLOCKED. NO real transfers executed — invest modal opened, verified, closed without clicking 'Autorizar'.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AppShell sidebar (individuo)",
+        "issue": "Sidebar muestra 'Mis clientes' para maria.test (role=client_user). Per CHECK 11, esta entry NO debe aparecer para client_user. La página debe ser inaccesible para no-admin sin parent_org_id.",
+        "selector": "aside a:has-text('Mis clientes')",
+        "priority": "HIGH"
+      },
+      {
+        "component": "Header AppShell (individuo)",
+        "issue": "Para maria.test (org_type=personal) el badge debajo del email dice 'PARTNER'. Es contradictorio — es individuo retail, no partner. Confunde con la categorización org_type.",
+        "selector": "header [class*='partner'], header .text-xs",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "/client/investments (Posiciones)",
+        "issue": "Columna 'Modalidad' renderea el label interno 'liquid_v1' (35 stakings activos USDC todos como 'liquid_v1'). Debe traducirse al label en español tipo 'Líquida' o 'Líquido USDC'. Es un leak de label interno visible al cliente.",
+        "selector": "td:has-text('liquid_v1')",
+        "priority": "HIGH"
+      },
+      {
+        "component": "/client/investments",
+        "issue": "No se encontró ningún link a Stellar Expert (data-testid contiene 'stellar-expert' = 0 elementos). Per CHECK 8, positions con hash on-chain deben tener link. Todas las 35 USDC positions están en estado RESCATADA — el hash on-chain del bridge debería estar presente en redeems. Verificar que el link se renderea cuando hay tx_hash.",
+        "selector": "[data-testid*='stellar-expert']",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "/client/invest (USDC default)",
+        "issue": "CHECK 7 FALLA: click en 'Continuar a depositar' (data-testid=invest-continue) NO navega a /client/cargar-usdc. El URL permanece en /client/invest. El botón visualmente queda deshabilitado porque saldo USDC = $0.00 — pero el flujo esperado es que ese botón lleve a depositar USDC justamente cuando hay 0. Bloquear el click cuando saldo=0 es contraproducente (el usuario quiere ir a cargar fondos).",
+        "selector": "[data-testid='invest-continue']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/client/investments",
+        "issues": [
+          "Badge 'RESCATADA' usa mayúsculas via CSS — consistente con resto del portal, OK.",
+          "Modalidad 'liquid_v1' rompe la experiencia ES — único string técnico visible en español-only portal."
+        ]
+      },
+      {
+        "screen": "/client (dashboard maria.test individuo)",
+        "issues": [
+          "PreKybCard 'Completá tu onboarding…' bloquea verificación de kpi-row-arsa/kpi-row-usdc en CHECK 1 — semilla del usuario maria.test NO tiene canOperate=true (status='Verificación de antecedentes en curso · CHECKLIST 0/8'). NO se pudo validar la presencia de los KPIs por moneda en CHECK 1 sin un individuo con onboarding aprobado. Recomiendo seed un individuo (org.type=personal) con kyb_status=approved + checklist completo."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "P1 — Ocultar 'Mis clientes' del sidebar para client_user (sin parent_org_id check). CLIENT_NAV gate en AppShell.tsx debe filtrar por role+parent_org_id, no solo por requiresPartnerOrg.",
+    "P1 — Traducir 'liquid_v1' → 'Líquida' (o etiqueta CMS) en columna Modalidad de /client/investments. Mapper en portal-format.ts o investments page.tsx.",
+    "P1 — Botón 'Continuar a depositar' en /client/invest (USDC sin saldo) debe navegar a /client/cargar-usdc incluso con saldo 0. Actualmente queda deshabilitado y bloquea el flujo onramp→invest.",
+    "P2 — Verificar que badge 'PARTNER' en header NO se muestre para org_type=personal. Confunde con el rol partner del producto.",
+    "P2 — Verificar render de link Stellar Expert (data-testid contiene 'stellar-expert') cuando la position tiene tx_hash on-chain. No se vio ninguno en 35 posiciones rescatadas.",
+    "P3 — Para hacer CHECK 1 completo (KPIs por moneda en dashboard), generar/aprobar un individuo seed con canOperate=true."
+  ],
+  "critical_code_review_comments": [
+    "El portal mezcla labels técnicos (liquid_v1) con UI en español — agregar mapper único en lib/portal-format.ts modalityLabel(internal) → es-AR string y usarlo en todas las tablas.",
+    "CHECK 14 grep automático contra HTML no se hizo screen-by-screen por límite de tokens. Sugiero a main agent correr `grep -RnE 'Refresh|Phase 7|Phase 8|Phase 11|Sprint 11B|CMS · Transferencia|Valor total cuenta|Saldo (ARSa|USDC) libre|Term Staking|Convertimos tu' /app/frontend/src/app/client` para verificar fuente."
+  ],
+  "checks_status": {
+    "check1_individuo_dashboard_kpis": "BLOCKED — maria.test no tiene canOperate=true; PreKybCard renderiza en su lugar. Forbidden strings ('Valor total cuenta','Saldo ARSa/USDC libre') NO aparecen ✓. kpi-row-arsa/usdc no se pueden validar.",
+    "check2_individuo_sidebar_and_redirects": "PARTIAL PASS — items esperados presentes ✓, forbidden dev items ausentes ✓, /client/api-keys, /webhooks, /widget, /developers, /sdk TODAS redirigen 307→/client ✓. PERO 'Mis clientes' aparece en sidebar (no debería para client_user).",
+    "check3_partner_sidebar_and_apikeys": "PASS — sidebar partner muestra Dashboard/Invertir/Posiciones/Cargar dinero/Retirar/Movimientos/Mis clientes/API Keys/Webhooks/Widget builder/Docs & SDK/Perfil. /client/api-keys = 200 ✓",
+    "check4_cargar_dinero_hub": "PASS — rail-arsa ✓, rail-usdc ✓, onramp-international-soon ✓ con tags USD/CLP/BRL/MXN ✓. NO aparece 'Convertimos tu transferencia a USDC' ✓",
+    "check5_rails_active": "PASS — click rail-arsa muestra CVU+alias copiables ✓. Click rail-usdc lleva a /client/cargar-usdc con dirección Stellar válida (G…) ✓. La palabra 'Solo red Stellar' como texto exacto no fue encontrada en /client/cargar-usdc pero el contenido es equivalente (verificar literal).",
+    "check6_invest_arsa_modal": "PASS — invest-now-arsa ✓ abre invest-confirm-modal ✓ con dirección Stellar destino completa ✓, checkbox obligatorio ✓, botón Autorizar deshabilitado sin checkbox ✓. NO se hizo click en Autorizar. Modal cerrable con Escape.",
+    "check7_invest_usdc_continue": "FAIL — botón 'Continuar a depositar' (data-testid=invest-continue) presente y con texto correcto ✓ pero click NO navega a /client/cargar-usdc (URL permanece en /client/invest). Probable: button disabled por saldo=0.",
+    "check8_positions": "FAIL — Columna 'Modalidad' muestra 'liquid_v1' (label interno). Estados en español ('Activa'/'Vencida'/'Detectando depósito') NO observados en las 35 posiciones (todas en RESCATADA). NO se encontró link 'stellar-expert'. NO inglés ('active'/'matured'/'pending_onchain') ✓. NO 'Term Staking' ✓.",
+    "check9_offramp": "PASS — rail-arsa expande form ✓ con monto/alias-CVU/holder/checkbox ✓; rail-usdc-soon presente con badge PRÓXIMAMENTE ✓ (no clickeable visualmente — no se ejecutó retiro). Confirmar retiro deshabilitado sin checkbox ✓.",
+    "check10_transactions": "PASS — filtros 'Tipo' y 'Estado' presentes (no 'Status') ✓. Estados visibles: COMPLETADO (CSS uppercase de 'Completado'). Tipos: INVERSIÓN/RESCATE/CARGA DE FONDOS. Montos con USDC formato US. Fechas dd/mm/aaaa hh:mm ✓.",
+    "check11_mis_clientes": "FAIL — Para maria.test (client_user) la entry 'Mis clientes' aparece en el sidebar (no debería). Para client.admin@alemany.capital aparece ✓ (es client_admin).",
+    "check12_perfil": "PASS — subtítulo 'Datos personales, MFA, sesiones activas, notificaciones y gestión de cuenta' ✓; NO 'Sprint 11B' kicker ✓; email del usuario en header ✓.",
+    "check13_admin_redirect": "PASS — /admin con cookie de cliente → 307 a /client ✓; /admin/organizations también ✓.",
+    "check14_idioma_consistency": "PARTIAL — verificación parcial: NO se encontró 'Refresh', 'Sprint 11B', 'Valor total cuenta', 'Saldo ARSa libre', 'Saldo USDC libre', 'Term Staking', 'Convertimos tu' en pantallas visitadas ✓. PERO 'liquid_v1' es un label técnico leakeado en CHECK 8. Falta grep exhaustivo del bundle/sourcemap."
+  },
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (per request)", "frontend": "10/14 = 71%" },
+  "test_credentials": "Individuo: maria.test+1780679716@individuo-prosper.io (canOperate=false, onboarding pendiente). Partner: client.admin@alemany.capital (canOperate=true, family_office). Dev-login via GET /api/v1/auth/dev-login?email=<…>&next=/<path>.",
+  "seed_data_creation": "Ninguno — usados los seeds existentes. RECOMENDACIÓN: seed individuo con canOperate=true para poder validar CHECK 1 completo.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Tres bugs P1 confirmados: (1) 'Mis clientes' visible para client_user, (2) 'liquid_v1' modality leak en /client/investments, (3) 'Continuar a depositar' en /client/invest no navega cuando USDC saldo=0. CHECK 6 (modal ARSa) totalmente verificado — modal abre, checkbox bloquea, botón Autorizar deshabilitado, dirección Stellar válida (GDHQFTLNK…GG4DRLDF) visible — NO se ejecutó la tx real. Cuando el main agent arregle los 3 P1, retesteo dirigido a CHECK 1/7/8/11. Para CHECK 1 hace falta seed un individuo con onboarding completo (canOperate=true).",
+  "rca_of_issues": "(a) Sidebar gate en AppShell.tsx filtra por requiresPartnerOrg pero NO chequea role+parent_org_id para Mis clientes — falta condición `role === 'client_admin' && !parent_org_id`. (b) Investments table imprime raw `modality` field — falta passar por mapper modalityLabel(). (c) Continue button en /client/invest queda disabled cuando balance USDC = 0 — la lógica del botón debe ser navegacional (a depositar), no condicional al saldo."
+}

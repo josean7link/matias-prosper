@@ -1,0 +1,56 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://app.prosper.foundation
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & push backend image
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          ECR_REPO: ${{ secrets.ECR_BACKEND_REPO }}
+        run: |
+          aws ecr get-login-password --region $AWS_REGION | \
+            docker login --username AWS --password-stdin $ECR_REPO
+          IMAGE=$ECR_REPO:$(git rev-parse --short HEAD)
+          docker build -t $IMAGE -f backend/Dockerfile backend/
+          docker push $IMAGE
+          echo "BACKEND_IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Update ECS service
+        run: |
+          aws ecs update-service \
+            --cluster prosper-prod \
+            --service prosper-api \
+            --force-new-deployment
+
+      - name: Deploy frontend to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          cd frontend
+          npx vercel --prod --token $VERCEL_TOKEN \
+                       --env REACT_APP_BACKEND_URL=https://api.prosper.foundation
+
+      - name: Smoke test
+        run: |
+          curl -fsSL https://api.prosper.foundation/api/v1/status | grep operational
+
+      - name: Notify Slack
+        if: always()
+        run: |
+          STATUS=${{ job.status }}
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"Prosper prod deploy: $STATUS\"}" \
+            ${{ secrets.SLACK_WEBHOOK_URL }}

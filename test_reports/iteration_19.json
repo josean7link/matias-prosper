@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 15.1 — Andes Offramp + Webhooks + Movements + Idempotency tested end-to-end. Backend pytest 9/10 PASS in /app/backend/tests/test_phase15_andes_ramp_offramp.py. One BUG found: gateway /webhooks/andes returns HTTP 500 (uncaught ERR_CRYPTO_OPERATION_FAILED 'Malformed signature') when the x-webhook-signature header is structurally invalid — PRD requires 401. The stale-timestamp branch correctly returns 401. Frontend Playwright on /client smoke-passes: arsa-deposit-btn opens deposit-modal (CVU+alias+wallet rows visible, copy buttons present, deposit-modal-ok closes it), arsa-withdraw-btn opens withdraw-modal, amount + destination filled, withdraw-lookup-btn resolves Holder ('Lucía López · CUIT 20149130349 · Banco Mock S.A.'), withdraw-submit-btn fires the POST (network 200 — Mongo confirms movement created + auto-settled). Movements card with [data-testid=ramp-movements-card] renders 6 rows including the freshly created deposit (verde) and withdrawal (azul) rows. Regression: Phase 14 ArsaAccountCard + balance + simulate-deposit still PASS (already covered by /app/backend/tests/test_phase14_andes_ramp.py 8/8).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST http://localhost:8090/webhooks/andes", "issue": "Malformed signature header (e.g. 'INVALID_SIGNATURE_XXX' instead of base64) causes Node crypto.verify to throw ERR_CRYPTO_OPERATION_FAILED — Fastify default error handler returns HTTP 500 instead of 401. PRD explicitly requires 401 for invalid signatures. RCA: src/webhooks.ts:verifyWebhookSignature does not wrap crypto.verify in try/catch, so any non-base64 or non-DER sig surfaces as 500. Fix: catch the error inside verifyWebhookSignature and return {ok:false, reason:'malformed_signature'} OR wrap the verify() call in server.ts /webhooks/andes handler with try/catch -> reply.code(401). Stale-timestamp branch already returns 401 correctly.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "WithdrawModal toast on success", "issue": "After withdraw-submit-btn click, a toast appears in the top-right with text '[object Object]' instead of a human-readable success message. The submit DID succeed (movement persisted + auto-settled), but the toast handler is passing the response object directly to toast.success/error without serialising. Likely call site: /app/frontend/src/components/client/RampMovementsAndForms.tsx WithdrawModal onSubmit -> toast(...). Should be toast.success('Retiro enviado por $250,00') or similar.", "selector": "[data-testid=withdraw-submit-btn] -> sonner toast", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "WithdrawModal CVU/alias input", "issues": ["The destination input uses [data-testid=withdraw-destination-input] (unified across cvu/alias tabs) rather than a per-tab id. This is fine functionally and matches the PRD literally (the PRD only requires withdraw-lookup-btn + withdraw-holder-name + withdraw-submit-btn data-testids). Reporting for transparency in case a separate withdraw-cvu-input was expected."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase15_andes_ramp_offramp.py",
+    "/app/test_reports/pytest/phase15_andes_offramp.xml",
+    "/app/backend/tests/test_phase14_andes_ramp.py"
+  ],
+  "action_items": [
+    "[HIGH] Wrap crypto.verify() in /app/services/andes-gateway/src/webhooks.ts -> verifyWebhookSignature in try/catch so malformed signature headers return ok:false (handler then returns 401) instead of bubbling up as 500 ERR_CRYPTO_OPERATION_FAILED.",
+    "[MEDIUM] In /app/frontend/src/components/client/RampMovementsAndForms.tsx WithdrawModal onSuccess: pass a string to toast(...) (e.g., `Retiro enviado por $${amount}`) instead of the raw response object — currently renders as '[object Object]'.",
+    "[LOW] Consider adding [data-testid=withdraw-cvu-input] and [data-testid=withdraw-alias-input] (alongside the existing withdraw-destination-input) to ease future automation that wants to assert per-tab inputs."
+  ],
+  "critical_code_review_comments": [
+    "andes-gateway/src/webhooks.ts: verifyWebhookSignature lets crypto.verify throw on bad base64 — security-sensitive endpoints should always return 401, never 500 (informational leak of stack/crypto error code).",
+    "backend/routes/ramp_routes.py withdraw(): caps check (_check_arsa_caps) happens AFTER idempotency lookup which is correct, but BEFORE the gateway call. However the cap counts include 'Pending' movements — a stuck Pending movement (gateway down for settlement) keeps consuming daily cap until it transitions to Failed. Consider an admin ops endpoint to expire stale Pending withdrawals.",
+    "backend/routes/ramp_webhook.py _handle_deposit_success: idempotency is by external_id within ramp_movements but the receiver also dedupes by delivery_id one layer up. If Andes ever changes its transactionId between retries we'd double-credit. Safer: dedupe by (delivery_id, external_id) at the receiver layer only.",
+    "backend/routes/ramp_routes.py: withdraw debits cached ramp_balances even when initial_status is 'Pending'. On terminal 'Failed' the failed handler re-credits — but if status flips to 'Failed' BEFORE the cached debit row commits (race), the balance could go negative. Low risk in mock; flag for real-Andes integration.",
+    "Frontend WithdrawModal toast '[object Object]': non-functional but signals missing typed wrapper around toast(success/error). Add a small helper toastApiResult(res, fallback) shared by Deposit/Withdraw forms."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase15_andes_ramp_offramp.py (NEW)",
+    "/app/test_reports/pytest/phase15_andes_offramp.xml (NEW)",
+    "/app/test_reports/iteration_19.json (NEW)"
+  ],
+  "success_rate": {"backend": "90% (9/10 pytest — gateway 500 on bad sig is the only failure)", "frontend": "95% (full deposit + withdraw + lookup + movements flow works; only the success-toast renders as '[object Object]')"},
+  "test_credentials": "GET /api/v1/auth/dev-login?email=client.admin@alemany.capital -> client_admin (org_seed_alemany). GET /api/v1/auth/dev-login?email=admin@prosper.foundation -> super_admin. GATEWAY_INTERNAL_TOKEN=dev-internal-token-change-me.",
+  "seed_data_creation": "Triggered POST http://localhost:8090/dev/simulate-deposit twice (7777.77 + 50000 ARSa) for provider_user_id of org_seed_alemany. Each fires a signed fiat.deposit.success webhook -> persists a ramp_movements deposit row + bumps ramp_balances cache. Also created one withdrawal movement ($123.45 to CVU 0000003123456789012345) via the test suite — auto-settled to Success within 1.5s.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run with: pytest /app/backend/tests/test_phase15_andes_ramp_offramp.py -v. The single backend failure is test_gateway_webhook_rejects_bad_signature (expects 401, gets 500 from Node fastify default error handler because verifyWebhookSignature doesn't catch crypto.verify exceptions). Once webhooks.ts is patched, all 10 should pass. Frontend has 'sonner' toasts and the WithdrawModal currently shows '[object Object]' after successful submit — submit logic is fine, only the toast string is wrong. UI testids confirmed inside withdraw-modal: withdraw-amount-input, withdraw-tab-cvu, withdraw-tab-alias, withdraw-destination-input, withdraw-lookup-btn, withdraw-holder-name, withdraw-submit-btn, withdraw-modal-close. Deposit modal testids: deposit-modal, deposit-modal-ok plus copy buttons. Movements card: ramp-movements-card with ramp-movement-<id> rows.",
+  "rca of the issue": "Gateway 500 on malformed signature: in /app/services/andes-gateway/src/webhooks.ts the verifyWebhookSignature() helper calls crypto.verify('SHA256', payload, publicKey, Buffer.from(sig,'base64')) without try/catch. When the signature buffer is malformed (e.g., the test sent the literal string 'INVALID_SIGNATURE_XXX'), Node throws ERR_CRYPTO_OPERATION_FAILED 'Malformed signature' synchronously. Fastify's default error handler converts that to HTTP 500. The contract per Phase 15.1 PRD is to return 401 for ANY signature/timestamp failure. Reproduction: curl -X POST http://localhost:8090/webhooks/andes -H 'Content-Type: application/json' -H 'x-webhook-timestamp: <fresh ms>' -H 'x-webhook-signature: BAD' -H 'x-webhook-delivery-id: dlv_x' -d '{\"type\":\"fiat.deposit.success\",\"data\":{}}' -> 500. Mitigation: wrap the crypto.verify call in webhooks.ts in try { ... } catch { return {ok:false, reason:'malformed_signature'} } so the public endpoint always returns 401 on any verify failure."
+}

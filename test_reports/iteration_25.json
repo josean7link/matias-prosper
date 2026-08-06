@@ -1,0 +1,42 @@
+{
+  "summary": "Self-service funnel E2E + auto-provision bug fix verified. 6/6 backend pytest assertions PASS (including 403 on passwordless-token/dev-login for unknown email + andes-direct mode on /onboarding/apply individuo). Frontend: landing renders with both CTAs, /apply toggle individuo↔empresa works, individuo form posts and redirects to /apply/{app_id}/kyc-docs (mode=andes-direct), KYC docs page renders 3 slots + tips with submit disabled, 3 synthetic JPG uploads enable submit, /apply/status banner shows status-upload-cta pointing back to kyc-docs, /login has login-apply-link → /apply. Only caveat: after click on kyc-docs-submit with synthetic JPGs, the kyc-rejected screen did not appear within the 120s wait (consistent with the task note that Andes REAL/Sandbox may take >120s on synthetic photos and the backend httpx read timeout was bumped to 120s) — UI stays in submitting state; not reproduced as a bug because spec explicitly says the gateway is REAL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "kyc-docs submit → Andes REAL",
+        "issue": "After 3 JPG uploads + click submit, the UI did not reach the kyc-rejected screen within 120s. This matches the spec caveat (Andes REAL against Sandbox + httpx 120s read timeout). Not reproduced as bug. Recommend either: surface a timeout error UI (e.g., 'Andes está tardando — intentá de nuevo') if the request exceeds 120s, or lower the synthetic-photo Andes round-trip via the gateway. Worth monitoring with a real DNI photo.",
+        "affected_selectors": ["[data-testid='kyc-docs-submit']", "[data-testid='kyc-rejected']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter25_auth_self_service.py",
+    "/app/test_reports/pytest/iter25_self_service.xml"
+  ],
+  "action_items": [
+    "Consider adding a UI-side timeout / friendly error state when /api/v1/onboarding/{app_id}/kyc-docs takes longer than ~90s, so the user is not stuck on the spinner if Andes hangs on synthetic uploads.",
+    "Optional: hide the second 'YA TENGO CUENTA' toast that overlapped the landing-cta-apply success transition (cosmetic only).",
+    "BUG FIX CONFIRMED working — unknown emails return 403 with /apply hint on both /auth/passwordless-token and /auth/dev-login; seeded admin@prosper.foundation + client.admin@alemany.capital still redirect normally."
+  ],
+  "critical_code_review_comments": [
+    "passwordless-token request schema requires BOTH `code` (continuation token) AND `token` (OTP value) — the field names are easy to confuse with the dev_otp returned by /passwordless-login. Consider renaming to `continuation_token` + `otp` (or document inline).",
+    "LegacyApplyForm validation accepts the HTML date input which on Chrome submits YYYY-MM-DD, but the regex `/^\\d{4}-\\d{2}-\\d{2}$/` is correct only for that format — on Safari the same input may give a different format and break validation. Worth adding a fallback parser.",
+    "The /apply/[app_id]/kyc-docs submit currently relies on 120s httpx read timeout; if Andes hangs there is no client-side abort/AbortController — a stuck request blocks the user indefinitely."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter25_auth_self_service.py"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "~90% — every required testid + flow verified; only kyc-rejected screen un-reached due to Andes REAL latency"},
+  "test_credentials": "admin@prosper.foundation + client.admin@alemany.capital via GET /api/v1/auth/dev-login (both 303). Unknown emails return 403 as designed.",
+  "seed_data_creation": "Two onboarding applications were created via /api/v1/onboarding/apply (individuo) for E2E flow: juan.test.<hex>@gmail.com and juan.upload.<hex>@gmail.com. Both left in in_review/PENDING.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_iter25_auth_self_service.py as regression for the auto-provision bug fix + andes-direct mode on /onboarding/apply. Key Playwright selectors verified: landing-page, landing-cta-apply, landing-cta-login, applicant-type-toggle, applicant-type-individual, applicant-type-business, apply-form-individual, apply-form-business, apply-indiv-first-name/last-name/email/phone/cuit/birthdate, apply-submit, kyc-docs-tips, kyc-slot-face/id_front/id_back, kyc-docs-submit, status-upload-cta, login-apply-link. The passwordless-token endpoint expects {email, code (=continuation token from /passwordless-login response), token (=OTP)}.",
+  "rca of the issue": "No critical bug found. Auto-provision fix (server.py L286-310, L358-378) is working: unknown emails are explicitly rejected before any session token is minted, with a Spanish message that references /apply. The fix correctly preserves the @prosper.foundation auto-onboarding path and the seeded client accounts. The only soft observation is that kyc-docs submit with synthetic JPGs sits on the spinner for >120s against Andes REAL Sandbox — UI should surface a timeout/abort state, but the underlying contract is unchanged."
+}

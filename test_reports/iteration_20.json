@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 15.1 RE-TEST after two fixes. (A) GATEWAY 401 fix VERIFIED: POST http://localhost:8090/webhooks/andes with x-webhook-signature='INVALID_SIGNATURE_XXX' now returns HTTP 401 with body {error:'invalid signature', reason:'malformed-signature: Malformed signature'} (was 500 ERR_CRYPTO_OPERATION_FAILED). Stale-timestamp branch still returns 401. (B) TOAST [object Object] fix PARTIALLY VERIFIED: the api.ts ApiError detail flattening works — toasts no longer show '[object Object]'. However while exercising the happy-path UI withdraw the toast now reveals a PRE-EXISTING latent bug: the POST /api/v1/ramp/accounts/{ec}/withdraw is sent with Content-Type 'text/plain;charset=UTF-8' (NOT application/json) so FastAPI returns 422 with detail 'Input should be a valid dictionary or object to extract fields from'. The toast cleanly renders that string (good — the flattening works), but the success path 'Retiro enviado por $250,00' can never fire from the UI because the request itself fails. (C) Full backend regression: 10/10 tests in /app/backend/tests/test_phase15_andes_ramp_offramp.py PASS (was 9/10). All idempotency, signature, simulate-deposit, withdraw-happy-path, auto-settle, cvu-lookup, movements-DESC assertions pass with the real signed-webhook flow. (D) Frontend smoke: deposit modal opens/closes via arsa-deposit-btn + deposit-modal-ok; withdraw modal opens via arsa-withdraw-btn, lookup resolves holder name 'Lucía López', but withdraw-submit-btn now triggers a clean 422 toast (no movement row added from UI; the older pytest-created row '− $ 123,45 Test Holder' is what testing agent of iter19 mistakenly attributed to the UI submit).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "UI WithdrawModal → POST /api/v1/ramp/accounts/{ec}/withdraw",
+        "issue": "Request is sent with Content-Type 'text/plain;charset=UTF-8' instead of 'application/json' → backend returns HTTP 422 'Input should be a valid dictionary or object to extract fields from'. ROOT CAUSE: /app/frontend/src/lib/api.ts lines 10-14 — `fetch(url, { credentials, headers:{Content-Type, ...init.headers}, ...init })`. The `...init` spread comes AFTER the headers merge, so when a caller passes `headers: {Idempotency-Key}` via init, the spread OVERRIDES the merged headers, dropping Content-Type. The fix is to either (a) reorder: `{ credentials, ...init, headers:{Content-Type:'application/json', ...(init.headers||{})} }` or (b) extract init.headers explicitly. This bug pre-dates the toast fix — it was hidden in iter19 because the api.ts error path returned '[object Object]' and the testing agent mistakenly attributed an unrelated pytest-created movement row to the UI submit. The fix to flatten ApiError details (this iteration) actually EXPOSED the real backend rejection.",
+        "affected_selectors": ["[data-testid=withdraw-submit-btn]"],
+        "priority": "HIGH"
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase15_andes_ramp_offramp.py",
+    "/app/test_reports/pytest/phase15_andes_offramp.xml"
+  ],
+  "action_items": [
+    "[HIGH] Fix /app/frontend/src/lib/api.ts spread order so headers are NOT clobbered by `...init`. Suggested patch: `const { headers: extraHeaders, ...rest } = init; const res = await fetch(url, { credentials: 'include', ...rest, headers: { 'Content-Type': 'application/json', ...(extraHeaders || {}) } });`. After patching, re-run the UI withdraw smoke test — expect a 200 response, a 'Retiro enviado por $250,00' success toast, and a fresh row in ramp-movements-card with the correct amount + 'Lucía López' holder. The same bug silently affects ANY frontend caller that passes its own headers (currently only submitWithdraw with Idempotency-Key)."
+  ],
+  "critical_code_review_comments": [
+    "api.ts header-spread bug is sneaky but fundamental: ANY future call site that passes init.headers will lose Content-Type. Consider a stricter typed wrapper (e.g., apiJson<T>(path, body, init?) that builds the body internally) so the caller never needs to set Content-Type and can't accidentally clobber it.",
+    "Once api.ts is fixed, add an e2e Playwright assertion that the network response status is 200 on withdraw-submit-btn (not just that a toast appears). The previous iter19 false-positive shows that 'toast visible + movements row exists' is not enough proof of integration health.",
+    "andes-gateway/src/webhooks.ts try/catch around crypto.verify is the correct fix — the gateway now uniformly returns 401 with reason 'malformed-signature' instead of bubbling Node crypto errors as 500. Good defensive coding."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (10/10 pytest in test_phase15_andes_ramp_offramp.py)",
+    "frontend": "75% — gateway 401 fix verified, toast no longer shows '[object Object]', deposit/withdraw modals + cvu-lookup render correctly, BUT UI withdraw submit fails with 422 due to api.ts header-spread bug (Content-Type clobbered)."
+  },
+  "test_credentials": "GET /api/v1/auth/dev-login?email=client.admin@alemany.capital -> client_admin (org_seed_alemany). GATEWAY_INTERNAL_TOKEN=dev-internal-token-change-me.",
+  "seed_data_creation": "Pytest run triggered POST /dev/simulate-deposit twice (7777.77 + 50000 ARSa) and created one withdrawal ($123.45) via /api/v1/ramp/accounts/{ec}/withdraw. Two failed UI withdraw attempts ($250 and $275) — neither persisted (422 rejection).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Single remaining blocker: /app/frontend/src/lib/api.ts has a header-spread ordering bug. Reorder so `...init` is spread BEFORE the headers merge (or destructure init.headers separately). Then UI withdraw flow will return 200 and the 'Retiro enviado por $<amount>' toast can be observed. Once patched, re-run the same Playwright flow used here (open WithdrawModal → fill amount + CVU 0000003123456789012345 → lookup → submit) and confirm: (1) network 200 for POST /withdraw, (2) sonner toast contains 'Retiro enviado por', (3) new row visible in [data-testid=ramp-movements-card]. Backend pytest /app/backend/tests/test_phase15_andes_ramp_offramp.py is 10/10 green — no further backend work needed for Phase 15.1.",
+  "rca of the issue": "api.ts fetch wrapper:\n```ts\nconst res = await fetch(url, {\n  credentials: 'include',\n  headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },\n  ...init,   // <-- spreads init.headers AGAIN, fully overwriting the merged headers above\n});\n```\nWhen the caller is `submitWithdraw` which passes `headers: { 'Idempotency-Key': key }` via init, the final RequestInit ends up with `headers: { 'Idempotency-Key': key }` only — Content-Type is gone. The browser then defaults the Content-Type for a string body to 'text/plain;charset=UTF-8'. FastAPI's body parser only accepts JSON for the Pydantic model and returns 422 'Input should be a valid dictionary or object to extract fields from'. Mitigation: destructure init.headers separately and merge once, OR spread `...init` first and headers last. The toast '[object Object]' fix in this iteration is correct and effective — it just exposed the underlying integration bug that iter19 had misread as a UI-only issue."
+}

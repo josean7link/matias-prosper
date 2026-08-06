@@ -1,0 +1,34 @@
+{
+  "summary": "Retest of Sprint A after iteration_4 fixes. BOTH HIGH bugs CONFIRMED FIXED. (1) ExportPdfButton: clicking [data-testid='dashboard-export-pdf'] triggers a Playwright expect_download event yielding 'prosper-admin-2026-05-12.pdf' at 6472 bytes; ZERO 'RangeError: Offset is outside the bounds of the DataView' in pageerror/console; sonner toast 'Dashboard PDF downloaded' rendered. (2) OpsQueuePanel: [data-testid='ops-queue-status'] is present in the DOM and renders 'Live · ws' on /admin — WebSocket DOES forward through the preview ingress as main agent confirmed. Regression: 32/32 pytest cases (23 phase2_dashboard + 9 sprint_a) PASS in 6.66s. Frontend regression: all 6 KPI tiles, 3 SVG charts (nav/volume/revenue), top-clients, recent-activity (8 rows), refresh, range switcher 7d/30d/90d all present with their testids; no build-error overlay; 0 console errors; 0 pageerrors. Ready to ship.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2_dashboard.py",
+    "/app/backend/tests/test_sprint_a.py",
+    "/app/test_reports/pytest/iter5_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ExportPdfButton onClick now correctly uses try/catch/finally with sonner toasts on both success and failure — good. Built-in Helvetica/Courier removes the network-fetched font failure mode. Consider also catching synchronous throws from `pdf(doc)` constructor (currently only the awaited toBlob is inside try) — minor, low risk.",
+    "OpsQueuePanel now binds wsStatus correctly. Note: the brief wording said 'connected' but the implementation uses 'live' for the WS-up state and matches WsStatus type — consistent end-to-end, no action needed.",
+    "Carry-over from iter_4 (not in scope for this retest): nav_snapshots unique index created after insert_many is still a multi-replica race; recent_activity org lookup is still per-row roundtrip. Both non-blocking."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (32/32 pytest: 23 phase2_dashboard + 9 sprint_a)",
+    "frontend": "100% (Export PDF download + toast ✓, ops-queue-status testid='Live · ws' ✓, KPIs ✓, charts ✓, top-clients ✓, recent-activity 8 rows ✓, refresh ✓, range switcher ✓, no build-error overlay ✓, 0 console errors)"
+  },
+  "test_credentials": "admin@prosper.foundation (super_admin, passwordless OTP via /var/log/supervisor/backend.err.log).",
+  "seed_data_creation": "None. KPIs unchanged: AUM $23,175,000, NAV 1.042703, Volume 30d $4,425,000, Revenue MTD $1,552.50, Active 2, Ops 0.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Sprint A is GREEN. Both iter_4 HIGH bugs fixed and verified live on https://finance-control-215.preview.emergentagent.com. Regression command: /root/.venv/bin/python -m pytest /app/backend/tests/test_phase2_dashboard.py /app/backend/tests/test_sprint_a.py -v. For frontend retest: login via passwordless OTP (admin@prosper.foundation, OTP in backend.err.log), navigate to /admin, then check [data-testid='ops-queue-status'] text and click [data-testid='dashboard-export-pdf'] with page.expect_download().",
+  "rca of the issue": "N/A — both iter_4 RCAs (Font.register CDN failure + missing data-testid binding) confirmed fixed at source. Diff vs iter_4: ExportPdfButton.tsx now (a) removes Font.register, (b) uses fontFamily 'Helvetica'/'Helvetica-Bold'/'Courier' (all pdfkit built-ins, no network fetch), and (c) wraps the pdf().toBlob() pipeline in try/catch with sonner success+error toasts. OpsQueuePanel.tsx now exposes data-testid='ops-queue-status' bound to wsStatus ternary ('live'→'Live · ws' | 'connecting'→'Connecting…' | else→'Live · 30s'). Observed live state was 'Live · ws' — WebSocket is reaching the backend through the preview ingress."
+}

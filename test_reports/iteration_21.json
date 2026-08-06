@@ -1,0 +1,41 @@
+{
+  "summary": "Phase 16 backoffice de Rampa — full backend + frontend e2e verification. 16/16 pytest cases pass against the live preview URL; all 5 new frontend pages (/admin/integraciones/rampa, /admin/rampa/cuentas, /admin/rampa/movimientos, /admin/rampa/stats, /admin/rampa/webhooks) plus the inline RampStatsSection in /admin render with the expected data-testids, hydrated data, charts, drilldown and CSV download. Global provider-config restored to {provider:andeslabs, mode:sandbox, enabled:true}.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/rampa/cuentas KPIs", "issues": ["The 4 KPI cards (AUM total, Active accounts, Wallets, etc.) do not expose data-testid attributes (e.g. ramp-kpi-aum, ramp-kpi-active-accounts). The required ramp-account-row-org_seed_alemany / ramp-account-open-* / ramp-account-drilldown testids ARE present. Adding KPI testids would make the cards individually addressable."]},
+      {"screen": "/admin/rampa/movimientos filters", "issues": ["The Desde/Hasta date filters use the browser's native <input type=\"date\"> picker instead of the shadcn Calendar component used elsewhere in the app. Minor consistency issue."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase16_admin_ramp.py",
+    "/app/test_reports/pytest/phase16_admin_ramp.xml"
+  ],
+  "action_items": [
+    "(Optional) Add data-testid=ramp-kpi-* to the 4 KPI cards on /admin/rampa/cuentas to mirror the testid coverage on the stats page.",
+    "(Optional) Replace native <input type=date> on /admin/rampa/movimientos with the shadcn Calendar component used in the rest of the admin to keep visual consistency."
+  ],
+  "critical_code_review_comments": [
+    "audit_logs entries are written before/after for provider_config update/create/delete and for movements.export_csv — verified via pymongo count probe (counts strictly increase across each mutation).",
+    "Connectivity probe returns latency_ms for both providers (~51ms andeslabs, ~430ms alfred); both reachable+authenticated against the mock gateway.",
+    "Stats endpoint correctly returns mode='mock' and the timeseries payload contains exactly 30 daily points within the expected range.",
+    "Capabilities endpoint returns alfred, andeslabs and _gateway keys with producedAssets/chains/onrampModel fields.",
+    "Webhooks deliveries cross-check returns delivered_count=0 (mock mode) and received_count>=2, matching the documented behaviour. The UI shows 'Andes entregó 0 · recibimos 2' with a note explaining mock mode.",
+    "Auth gate is correctly applied: client_admin@alemany.capital → 403 on /api/v1/admin/ramp/provider-config; admin@prosper.foundation → 200."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase16_admin_ramp.py (new pytest module, 16 cases)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% on the 5 reviewed pages + /admin inline section"},
+  "test_credentials": "Dev-login via GET /api/v1/auth/dev-login?email=... ; super_admin=admin@prosper.foundation, client_admin=client.admin@alemany.capital. Read from /app/memory/test_credentials.md (not present at test time; used the emails supplied by E1).",
+  "seed_data_creation": "None new. Tests reuse the Phase 14/15 seeded org_seed_alemany account (1 wallet, 2 movements: $200k deposit + $75k withdrawal, $125k ARSa balance, 2 webhook events). Provider-config global row is created if missing by the API itself.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 14/15 tests are intact at /app/backend/tests/test_phase14_andes_ramp.py and test_phase15_andes_ramp_offramp.py. Phase 16 tests at test_phase16_admin_ramp.py — 16 cases covering A (provider-config + connectivity + capabilities + audit logs), B (accounts + KPIs + detail), C (movements + CSV + audit), D (stats + timeseries), E (webhooks + deliveries cross-check) plus auth gate. They use pymongo (sync) for direct audit_logs counts to avoid motor/asyncio event-loop reuse issues under pytest-asyncio. Global provider config is always restored to {andeslabs,sandbox,enabled:true} at the end of the update test. Org override on org_seed_alemany is created + deleted within a single test, leaving the DB clean.",
+  "rca of the issue": "N/A — no failures. (Initial run had 3 FAILED on motor.run_in_executor 'Event loop is closed' when calling asyncio.run() per test; switched the audit-log count helper to pymongo sync client, which fixed it.)"
+}

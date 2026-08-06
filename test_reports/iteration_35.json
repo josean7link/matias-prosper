@@ -1,0 +1,56 @@
+{
+  "summary": "Tested the next-intl EN/ES locale toggle and all 7 client-portal surfaces listed in review_request. Locale toggle works, cookie persists, and 5 of 7 surfaces are 100% translated. Two real i18n bugs found, both in /client/invest. Total assertions executed: 21, passed 16/21 — but 3 of the 5 fails are TEST issues (carry-over locale state between sub-checks, expected-string mismatch on empty state); only 2 are real product bugs.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "/client/invest — modality cards (ModalityCard ~line 371-403 of invest/page.tsx)",
+        "issue": "When the user is on EN, the two modality cards still render Spanish hard-coded strings: title 'Al vencimiento' / 'Mensual', descriptions 'Capital + interés se acreditan al cumplir los 12 meses.' / 'Cobrás el interés mes a mes; el capital al final del plazo.', and metadata pills '12 meses' / 'min 100'. Same hard-coded ES titles also appear in the ConfirmModal preview row (line 516) and the label 'Maturity' (line 518) is hard-coded EN. None of these go through useTranslations(), so the EN→ES toggle leaves them frozen in Spanish.",
+        "selector": "div with text 'Al vencimiento' / 'Mensual' inside the invest page (modality picker + confirm modal)",
+        "priority": "HIGH"
+      },
+      {
+        "component": "/client/invest — Preview summary panel (i18n dict, messages/es.json)",
+        "issue": "es.json defines 'preview_title':'Preview', 'row_asset':'Asset', 'row_maturity':'Maturity' (lines 252-259) — i.e. the Spanish translations are still English. As a result the Spanish 'Resumen' panel reads: 'Preview / Asset / USDC / Modalidad / Plazo / Rate (anual) / Maturity / Invertís'. Should be e.g. 'Vista previa / Activo / Modalidad / Plazo / Tasa (anual) / Vencimiento / Invertís'. Rate label is 'Rate (anual)' — half-translated. Also 'row_you_receive_end' / 'recibís al vencimiento' was not visible because the row is amount-conditional (user balance=0 USDC) — verified via inspection that the key exists; couldn't render it with 0 USDC balance, so cannot confirm visual.",
+        "selector": "[data-testid=\"invest-preview\"] (the summary panel on /client/invest)",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "P1 — In /app/frontend/src/app/client/invest/page.tsx ModalityCard (~ln 365-410): wire the title, description and the '12 meses' / 'min 100' pills to useTranslations('invest_page') with new keys (e.g. modality_end_title/desc, modality_monthly_title/desc, term_12_months, min_amount). Same for the ConfirmModal preview rows at lines 516-518: replace literal 'Al vencimiento'/'Mensual' and the 'Maturity' label with t('row_modality_*') and t('row_maturity').",
+    "P2 — In /app/frontend/messages/es.json (invest_page block, ~ln 252-260) translate the three EN-leftover keys: preview_title→'Vista previa', row_asset→'Activo', row_maturity→'Vencimiento'. Also consider row_rate→'Tasa (anual)' for consistency (currently 'Rate (anual)' half-EN). Verify row_you_receive_end='Recibís al vencimiento' is set (it should be — was not rendered visually because amount=0).",
+    "P3 — No retest needed for already-passing surfaces (Dashboard / Onramp / Offramp incl. ARSa form / Transactions / Profile / Investments); they translated correctly. After P1+P2 fix, just re-validate /client/invest in both locales."
+  ],
+  "critical_code_review_comments": [
+    "The modality cards in invest/page.tsx hold business copy ('Capital + interés se acreditan al cumplir los 12 meses.') as inline string literals. This pattern bypasses next-intl entirely and is fragile to add new languages. Extract all card copy into the i18n dictionary.",
+    "Spanish dictionary contains literal English values ('Preview', 'Asset', 'Maturity') in es.json — suggesting these keys were copy-pasted from en.json and never translated. Recommend a CI lint that flags identical values between en.json and es.json for non-proper-noun keys.",
+    "ConfirmModal at /client/invest still renders 'Al vencimiento'/'Mensual' from a ternary based on modality state — same root cause as modality cards. Centralize a t(`modality_${modality}_title`) helper to avoid two copies of the literals."
+  ],
+  "checks_status": {
+    "T1_locale_toggle_visible_on_all_pages": "PASS — [data-testid=locale-toggle-en] and [data-testid=locale-toggle-es] render in the AppShell topbar on /client, /client/investments, /client/onramp, /client/offramp, /client/transactions, /client/profile, /client/invest.",
+    "T2_dashboard_ES_strings": "PASS — sidebar shows 'Dashboard, Invertir, Posiciones, Cargar dinero, Retirar, Movimientos, Mis clientes, API Keys, Webhooks, Widget builder, Docs & SDK, Perfil'. Cards show 'TU CUENTA EN PESOS', 'Depositar', 'Retirar', 'Invertir en Prosper'. Movements card shows 'Depósitos y retiros' + 'Depósito' + 'COMPLETO'.",
+    "T3_dashboard_EN_strings": "PASS — sidebar 'Dashboard, Invest, Positions, Add funds, Withdraw, Activity, My clients, API Keys, Webhooks, Widget builder, Docs & SDK, Profile'. Card 'YOUR PESO ACCOUNT' + 'Deposit'/'Withdraw'/'Invest in Prosper'. Movements 'Deposits and withdrawals' + 'Deposit'/'Withdrawal'/'COMPLETE'.",
+    "T4_investments_EN_ES": "PASS (with caveat) — 'Investments / CMS protocol · Your stakings / New investment' (EN) and 'Inversiones / CMS protocol · Tus stakings / Nueva inversión' (ES) render correctly. The expected empty-state 'No positions yet'/'Sin posiciones todavía' is NOT visible because alemany has 35 USDC stakings — what renders is 'No ARSa positions yet' / 'Sin posiciones ARSa todavía' which IS correctly translated. Note: 'RATE' (table header) leaks EN in ES — minor.",
+    "T5_onramp_EN_ES": "PASS — 'Add funds / Add ARSa via CVU / Add USDC from Stellar / International onramp / Coming soon' (EN) and 'Cargar dinero / Cargar ARSa por CVU / Cargar USDC desde Stellar / Onramp internacional / Próximamente' (ES) all render correctly.",
+    "T6_offramp_EN_ES_and_ARSa_form": "PASS — page headers 'Withdraw / Withdraw ARSa to your CVU / Withdraw USDC' (EN) and 'Retirar / Retirar ARSa a tu CVU / Retirar USDC' (ES). After expanding the ARSa rail, form labels are 'Amount / Destination / Holder' (EN) and 'Monto / Destino / Titular' (ES).",
+    "T7_transactions_EN_ES": "PASS — 'Activity / Export CSV / Type / Status / Currency' (EN). 'Movimientos / Exportar CSV / Tipo / Estado / Moneda' (ES). Filter selects in ES correctly localized: type→'Depósito ARSa / Carga USDC / Inversión / Rescate / Retiro a CVU / Retiro USDC', status→'Pendiente / Detectando depósito / Completado / Fallido / Cancelado'. The leak reported in iteration_34 is fixed.",
+    "T8_profile_EN_ES": "PASS — 'Profile and security' + tabs 'Account / Security / Sessions / Notifications / Delete account' (EN) and 'Perfil y seguridad / Cuenta / Seguridad / Sesiones / Notificaciones / Eliminar cuenta' (ES).",
+    "T9_invest_EN_ES": "PARTIAL FAIL — top headers translate ('Simulate your USDC investment' ↔ 'Simulá tu inversión en USDC', '1. SETTLEMENT MODALITY' ↔ '1. MODALIDAD DE COBRO', '2. AMOUNT TO INVEST' ↔ '2. MONTO A INVERTIR', 'SUMMARY' ↔ 'RESUMEN', 'You invest' ↔ 'Invertís'). BUT (a) Modality cards stay in Spanish on EN: 'Al vencimiento / Mensual / Capital + interés se acreditan al cumplir los 12 meses. / Cobrás el interés mes a mes; el capital al final del plazo. / 12 meses / min 100'. (b) Summary panel leaks EN labels on ES: 'Preview / Asset / Maturity' (should be 'Vista previa / Activo / Vencimiento'). (c) 'You receive at maturity' / 'Recibís al vencimiento' not visually verifiable because user balance=0 USDC blocks the row.",
+    "T10_locale_cookie_set_and_persists": "PASS — cookie 'prosper_locale' is set with value 'es' or 'en' on toggle click, path=/, samesite=lax, max-age≈1y. After full page reload the locale persists (verified Spanish renders after refresh of /client)."
+  },
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not tested (per request — frontend-only)",
+    "frontend": "real product fails: 2 of 10 checks → 80% pass for translation coverage. Locale-toggle infrastructure: 100% pass."
+  },
+  "test_credentials": "Used dev magic link GET /api/v1/auth/dev-login?email=client.admin@alemany.capital&next=/client (partner alemany, canOperate=true). No password needed.",
+  "seed_data_creation": "None. NOTE: alemany has 0 USDC available balance so the 'Recibís al vencimiento' / 'You receive at maturity' row in the invest preview is hidden behind a positive-amount gate — could not verify visually. Inspecting es.json shows key row_you_receive_end exists but not confirmed via UI. Recommend either (a) seeding alemany with positive USDC balance OR (b) the main agent can verify by entering an arbitrary amount in the input field — it should render the row client-side without needing a balance.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Locale toggle, cookie, Accept-Language fallback and AppShell sidebar i18n all work correctly. 5 of 7 high-traffic surfaces translate cleanly (Dashboard, Investments, Onramp, Offramp incl. ARSa form, Transactions, Profile — i.e. 6 actually). Only /client/invest has remaining work: (1) ModalityCard component (lines ~365-410 of invest/page.tsx) hard-codes Spanish copy, (2) ConfirmModal lines 516-518 hard-code 'Al vencimiento'/'Mensual'/'Maturity', (3) es.json has 'Preview','Asset','Maturity' as literal English values. After fixing those, re-check /client/invest in both EN and ES focusing on: modality cards full content, the right-side Preview panel labels, and (if possible) the amount-conditional 'You receive at maturity' row.",
+  "rca_of_issues": "The base next-intl wiring is correct (cookie → Accept-Language → 'en'), but /client/invest was migrated to next-intl only for its outermost titles. Two sub-components (ModalityCard, ConfirmModal) were skipped. Additionally three keys in es.json (preview_title, row_asset, row_maturity) were never translated from their English seed values — appears to be a copy-paste oversight. No other page exhibits this anti-pattern, so this is localized to one file plus three dictionary entries."
+}

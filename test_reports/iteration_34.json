@@ -1,0 +1,49 @@
+{
+  "summary": "Re-test puntual de 4 bugs + 3 verificaciones extra (R1..R7). Resultado: 5/7 PASS, 2/7 FAIL. Los 4 bugs P1 originales del iteration_33 (Mis clientes en sidebar para individuo, liquid_v1 leak, invest-continue navegación, badge PARTNER en header) están ARREGLADOS. Aparecen 2 hallazgos nuevos: middleware NO bloquea /client/mis-clientes para individuo (la página carga 200), y los <select> de filtros en /client/transactions muestran 'onramp'/'subscribe'/'pending'/'confirmed' raw EN en vez de labels ES.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "middleware.ts — gate /client/mis-clientes",
+        "issue": "RETEST 1b CRITICAL: maria.test+1780679716@individuo-prosper.io (role=client_admin, org.type=personal, parent_org_id=None) puede acceder a /client/mis-clientes con cookie de sesión. fetch directo retorna 200 (NO 307). La página renderiza el body 'Mis clientes / Vista de solo lectura · cada cliente…'. El review_request explícitamente decía que el middleware debe redirigir 307→/client por la combinación org.type=personal. El gate del sidebar (requiresPartnerOrg) sí oculta el link, pero el middleware no protege URL directa.",
+        "selector": "GET /client/mis-clientes (con cookie maria.test) → debería ser 307",
+        "priority": "HIGH"
+      },
+      {
+        "component": "/client/transactions — filtros Tipo y Estado",
+        "issue": "RETEST 7 PARCIAL: las FILAS de la tabla muestran español correcto (INVERSIÓN/RESCATE/CARGA DE FONDOS · COMPLETADO/PENDIENTE/FALLIDO). PERO los <select id='filter-type'> y <select id='filter-status'> exponen los valores RAW EN como labels visibles: 'onramp', 'offramp', 'subscribe', 'redeem', 'yield_accrual', 'payout' (filter-type) y 'pending', 'confirmed', 'failed', 'reversed' (filter-status). Las options deberían mostrar el mismo set ES que usa la tabla via statusLabel()/typeLabel() de portal-format.ts.",
+        "selector": "select#filter-type option, select#filter-status option",
+        "priority": "MEDIUM"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "P1 — Añadir gate en /app/frontend/src/middleware.ts: si pathname == '/client/mis-clientes' y user.org.type === 'personal' (o no es uno de fintech/broker/family_office/internal) → NextResponse.redirect('/client', 307). El sidebar ya filtra correctamente pero falta el Edge gate por URL directa.",
+    "P2 — En /app/frontend/src/app/client/transactions/page.tsx, los <option> de los filtros Tipo y Estado deben usar las funciones de portal-format.ts (statusLabel para estado y un typeLabel equivalente — actualmente no existe en portal-format.ts; agregarlo). Labels esperados: tipo→'Inversión'/'Rescate'/'Carga de fondos'/'Retiro'/'Rendimiento devengado'/'Pago'; estado→'Pendiente'/'Completado'/'Fallido'/'Revertido'."
+  ],
+  "critical_code_review_comments": [
+    "Falta una función typeLabel() en /app/frontend/src/lib/portal-format.ts paralela a statusLabel() — la tabla de transactions traduce los tipos pero los selects no, lo cual indica que el mapper vive ad-hoc en la página y no es reutilizable. Centralizar el mapping evita el leak en filtros.",
+    "El gate de routes sensibles vive disperso: AppShell (requiresPartnerOrg) + middleware (server-side). El test confirma que middleware NO incluye /client/mis-clientes en la lista de rutas partner-only — agregar ahí mismo en el array de partner_only_paths."
+  ],
+  "checks_status": {
+    "R1_mis_clientes_hidden_for_individuo_sidebar": "PASS — entry 'Mis clientes' NO aparece en sidebar de maria.test (verified inner_text de <aside>).",
+    "R1b_middleware_gate_individuo_mis_clientes": "FAIL — fetch(/client/mis-clientes, no-follow) con cookie maria.test → status=200, location=null. Página renderiza body 'Mis clientes / Vista de solo lectura'. Middleware NO redirige.",
+    "R2_partner_mis_clientes_visible_and_200": "PASS — sidebar partner muestra 'Mis clientes' ✓; /client/mis-clientes retorna 200 ✓.",
+    "R3_liquid_v1_not_in_investments": "PASS — substring 'liquid_v1' NO aparece en HTML ni texto visible de /client/investments. modalityLabel() está mapeando correctamente.",
+    "R4_invest_continue_navigates": "PASS — partner (USDC saldo=0): data-testid=invest-continue es <a href='/client/cargar-usdc'> con texto 'Ir a cargar USDC primero', NO disabled, click navega correctamente a /client/cargar-usdc.",
+    "R5_user_tag_individuo_Cliente_partner_Partner": "PASS — textContent del [data-testid='user-tag']: maria='Cliente', partner='Partner'. (innerText devuelve 'CLIENTE'/'PARTNER' por CSS uppercase, esperado).",
+    "R6_forbidden_strings_grep": "PASS — 0 hits en /client, /client/invest, /client/investments, /client/transactions, /client/onramp, /client/offramp, /client/cargar-usdc, /client/profile para todos los strings: Refresh, Phase 7/8/11, Sprint 11B, CMS · Transferencia, Valor total cuenta, Saldo ARSa libre, Saldo USDC libre, Term Staking, Convertimos tu, liquid_v1.",
+    "R7_transactions_states_es": "PARTIAL/FAIL — filas tabla en ES ✓ (COMPLETADO/INVERSIÓN/RESCATE/CARGA DE FONDOS). PERO selects de filtros muestran raw EN: filter-type tiene opciones {onramp, offramp, subscribe, redeem, yield_accrual, payout}; filter-status tiene {pending, confirmed, failed, reversed}."
+  },
+  "updated_files": [],
+  "success_rate": { "backend": "not tested (per request)", "frontend": "5/7 = 71%" },
+  "test_credentials": "maria.test+1780679716@individuo-prosper.io (org_type=personal, role=client_admin, parent_org_id=None, canOperate=false). client.admin@alemany.capital (org_type=family_office, role=client_admin, canOperate=true). Dev-login: GET /api/v1/auth/dev-login?email=<EMAIL>&next=<PATH>.",
+  "seed_data_creation": "Ninguno. NOTA: maria.test sigue sin canOperate=true por lo que /client/invest muestra 'Tu KYB no está aprobado todavía' (PreKybCard) — el R3 se validó con el partner alemany que sí opera. Para futuro retest cubriendo el flujo invest completo del individuo recomiendo seed individuo aprobado.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Los 4 bugs P1 reportados en iteration_33 (sidebar Mis clientes individuo, liquid_v1, invest-continue nav, badge PARTNER header) están ARREGLADOS y verificados. Quedan 2 issues nuevos: (1) middleware gate falta para /client/mis-clientes — la página es accesible a maria.test via URL directa aunque NO esté en el sidebar (defensa-en-profundidad rota); (2) filtros de /client/transactions exponen valores EN crudos en los <option>. Cuando el main agent arregle ambos, basta con re-testear R1b (curl/fetch HEAD a /client/mis-clientes con cookie de individuo debe ser 307) y R7 (inspeccionar opciones de los selects). Crear typeLabel() en portal-format.ts para reuso.",
+  "rca_of_issues": "(R1b) /app/frontend/src/middleware.ts protege rutas partner-only (api-keys/webhooks/widget/developers/sdk) pero NO incluye /client/mis-clientes — la confianza está sólo en el sidebar filter, lo cual no es seguridad efectiva. Fix: agregar '/client/mis-clientes' al array de partner-only paths del middleware. (R7) /app/frontend/src/app/client/transactions/page.tsx hardcodea las options de los <select> con value=label=raw type/status sin pasar por portal-format. Fix: agregar typeLabel() en portal-format.ts y mapear value→label en cada <option>."
+}

@@ -1,0 +1,97 @@
+# render.yaml — Render Infrastructure-as-Code
+# Declara los servicios backend (FastAPI) + andes-gateway (Node). El frontend
+# va en Vercel (ver frontend/vercel.json).
+# Docs: https://render.com/docs/infrastructure-as-code
+
+services:
+  # ────────────────────────────────────────────────────────────────────────
+  # Backend principal (FastAPI)
+  # ────────────────────────────────────────────────────────────────────────
+  - type: web
+    name: prosper-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    # Render asigna el puerto via $PORT; uvicorn ya usa --port 8001 pero
+    # Render mapea internamente su puerto expuesto — no necesita cambio.
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: MONGO_URL
+        sync: false          # Mismo Atlas que ya usa codigo_limpio — NO usar localhost
+      - key: DB_NAME
+        value: prosper_prod
+      - key: REDIS_URL
+        sync: false          # Mismo Upstash que ya usa codigo_limpio
+      - key: JWT_SECRET
+        generateValue: true
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        value: onboarding@resend.dev
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: CORS_ORIGINS
+        sync: false          # Se setea después de conocer la URL de Vercel
+      - key: RAMP_PROVIDER
+        value: andeslabs
+      - key: RAMP_PROVIDER_MODE
+        value: sandbox
+      - key: ANDES_GATEWAY_URL
+        sync: false          # URL pública del servicio prosper-andes-gateway (ver abajo), una vez desplegado
+      - key: GATEWAY_INTERNAL_TOKEN
+        sync: false          # Debe ser IDÉNTICO al que se setea en prosper-andes-gateway
+      - key: PROSPER_ENV
+        value: production
+      # Phase 02 — Deposit Detection Engine: apagado en este deploy (ver
+      # ANALISIS_PROSPER_PROJECT.md / DEPLOY_ADAPTATION.md — falta wiring
+      # del scheduler en server.py, no lo prendemos a ciegas en prod).
+      - key: DEPOSIT_ENGINE_ENABLED
+        value: "false"
+      - key: HORIZON_MODE
+        value: mock
+      - key: STELLAR_HORIZON_URL
+        value: https://horizon.stellar.org
+      - key: HORIZON_POLL_INTERVAL_SECONDS
+        value: "12"
+      - key: DEPOSIT_ORPHAN_TIMEOUT_MINUTES
+        value: "90"
+      - key: ARSA_BACKUP_POLLER_INTERVAL_SECONDS
+        value: "300"
+      - key: DEPOSIT_REDIS_PUBSUB_CHANNEL
+        value: prosper.deposits
+
+  # ────────────────────────────────────────────────────────────────────────
+  # andes-gateway (Node/Fastify — wrapper de @andeslabs/mint-sdk)
+  # Arranca en modo "real" por default; si falta ANDES_API_KEY, degrada solo
+  # a mock (no crashea). Podés desplegarlo ahora y sumar las credenciales
+  # reales de Andes después sin volver a tocar código.
+  # ────────────────────────────────────────────────────────────────────────
+  - type: web
+    name: prosper-andes-gateway
+    runtime: docker
+    dockerfilePath: ./services/andes-gateway/Dockerfile
+    dockerContext: ./services/andes-gateway
+    plan: free   # subir a starter si el cold start afecta el flujo de KYC/onramp
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8090"
+      - key: HOST
+        value: 0.0.0.0
+      - key: LOG_LEVEL
+        value: info
+      - key: GATEWAY_INTERNAL_TOKEN
+        sync: false          # Debe ser IDÉNTICO al que se setea en prosper-api
+      - key: PROSPER_BACKEND_URL
+        sync: false          # URL pública de prosper-api (para reenviar webhooks verificados)
+      - key: ANDES_GATEWAY_MODE
+        value: real          # con ANDES_API_KEY vacío, degrada solo a mock — ver nota arriba
+      - key: ANDES_API_KEY
+        sync: false          # ROTAR antes de usar — la vieja está en memory/PROD_DEPLOY.md, marcada para rotación
+      - key: ANDES_JWT_PRIVATE_KEY_PATH
+        sync: false          # path al secret file (Render → Environment → Secret Files) — subir la PEM rotada, no la vieja
+      - key: ANDES_BASE_URL
+        sync: false
+      - key: ANDES_ISSUER
+        sync: false

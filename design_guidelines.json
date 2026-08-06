@@ -1,0 +1,75 @@
+{
+  "theme": "dark",
+  "archetype": "4",
+  "archetype_name": "Swiss & High-Contrast",
+  "design_philosophy": "Institutional, functional, high-density 'Control Room' design. Emphasizing data clarity, objective metrics, and strict hierarchy over decorative elements.",
+  "colors": {
+    "background": "#050505",
+    "surface": "#111111",
+    "surface_hover": "#1A1A1A",
+    "border": "#222222",
+    "primary": "#0066FF",
+    "primary_hover": "#0052CC",
+    "success": "#00C853",
+    "warning": "#FFAB00",
+    "danger": "#FF3D00",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#888888",
+    "text_muted": "#555555"
+  },
+  "typography": {
+    "heading_font": "Chivo",
+    "body_font": "IBM Plex Sans",
+    "mono_font": "IBM Plex Mono",
+    "heading_strategy": "Tight tracking, radical weight contrast (Black vs Light). Do not exceed text-5xl for main headings.",
+    "body_strategy": "Clean, legible, left-aligned, text-sm for data density."
+  },
+  "spacing_and_layout": {
+    "dashboard_grid": "Control Room Grid (grid-cols-1 md:grid-cols-3 lg:grid-cols-4), tight gap-4. Every pixel utilized. h-full on children.",
+    "container_padding": "p-4 or p-6 for bento boxes. Data density is key.",
+    "border_radius": "rounded-sm (2px to 4px). Sharp, technical, precise."
+  },
+  "components": {
+    "cards": "Flat background, 1px subtle border (#222222), no shadow. Hover: slight lift (-translate-y-px) and border color darkens.",
+    "buttons": "Solid functional colors or stark white-on-black ghost buttons. Sharp corners.",
+    "tables": "Shadcn highly customized. No alternating row colors, just thin 1px bottom border (#222222). Hover effect on rows. IBM Plex Mono for numeric columns.",
+    "inputs": "Solid dark background, 1px border (#222222), white text, focus ring is primary blue.",
+    "navigation": "Sidebar or top nav with Solid Background (not glass) to keep it technical. Environment switcher (Sandbox/Prod) as a high-contrast pill.",
+    "modals": "Approval workflow modals must use stark contrast for the action buttons. Dimmed backdrop (bg-black/80)."
+  },
+  "motion": {
+    "transitions": "Instant or very fast (0.15s ease). No bouncy or slow animations. Institutional tools feel snappy.",
+    "hover_states": "Visible but subtle background color shift (surface to surface_hover). Text color remains high contrast."
+  },
+  "assets": {
+    "icons": "Phosphor Icons (dense, clear, thin lines). Provide installation command: yarn add @phosphor-icons/react",
+    "image_urls": [
+      {
+        "url": "https://images.unsplash.com/photo-1774187251887-e994c80ceddd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBnZW9tZXRyaWMlMjB0ZXh0dXJlJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3NzY1NTkyNTV8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract dark geometric texture for login background",
+        "category": "background"
+      },
+      {
+        "url": "https://www.prosper.foundation/images/stellar.png",
+        "description": "Stellar Network Logo",
+        "category": "partner_logo"
+      },
+      {
+        "url": "https://www.prosper.foundation/images/circle.jpg",
+        "description": "Circle USDC Logo",
+        "category": "partner_logo"
+      },
+      {
+        "url": "https://www.prosper.foundation/images/gbbc.jpg",
+        "description": "GBBC Logo",
+        "category": "partner_logo"
+      },
+      {
+        "url": "https://www.prosper.foundation/images/aws.jpg",
+        "description": "AWS Logo",
+        "category": "partner_logo"
+      }
+    ]
+  },
+  "instructions_to_main_agent": "Implement a dual-surface platform (Backoffice and Client Portal). Start with the shared layout shell (Sidebar, Header with Environment Switcher). Use Shadcn but customize it aggressively to match the 'Technical/Swiss Brutalist' dark theme: replace border-radius with 'rounded-sm', replace 'bg-background' with deep #050505, and use 1px borders everywhere to create a 'Control Room' grid. Tables and numeric data must use 'font-mono' (IBM Plex Mono). Make sure to include data-testid attributes on all interactive elements. Avoid 'Inter' font. Sandbox badge should be Warning Yellow, Prod should be Green or Neutral. REMEMBER: Provide implementation guidelines for .js files NOT .tsx files (e.g., use JSX in .js files, no TypeScript interfaces). DO NOT use generic placeholders for missing logos; use the provided partner_logo image URLs in the assets object."
+}

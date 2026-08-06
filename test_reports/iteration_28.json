@@ -1,0 +1,35 @@
+{
+  "summary": "P1-3 CMS migration testing. BACKEND: all 7 endpoints pass (treasury, sync-status, sync-run, stakings, RBAC, P0-4 410-Gone). FRONTEND: /admin/prosper/inversiones is broken — Stakings (CMS live) tab is default, but Treasury/Sync/Stakings cards never load data. Browser dev-tools confirm ZERO network calls to /api/v1/admin/prosper/* despite SWR hooks being declared. Direct fetch from the same browser context returns 200 with correct data, so backend + cookie auth are fine — bug is purely client-side (useSWR not firing).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CmsHeaderWidgets → Treasury card", "issue": "Stuck on 'Cargando…'. data-testid='cms-treasury-usdc/arsa/xlm' never render. SWR fetcher for /v1/admin/prosper/treasury never fires (no request observed in network log).", "selector": "[data-testid='cms-treasury-card']", "priority": "CRITICAL"},
+      {"component": "CmsHeaderWidgets → Sync widget", "issue": "Shows hardcoded 'DISABLED' pill + 'Aún no corrió' even though backend returns enabled=true and a populated last_run (processed=8, external_total=8). SWR for /v1/admin/prosper/staking-sync/status never fires.", "selector": "[data-testid='cms-sync-widget']", "priority": "CRITICAL"},
+      {"component": "Sync widget → Run now button", "issue": "Click does not trigger toast 'Staking sync ejecutado'. The POST /staking-sync/run is not fired from the browser (verified via response listener).", "selector": "[data-testid='cms-sync-run-now']", "priority": "CRITICAL"},
+      {"component": "StakingsTab", "issue": "Both 'Nuestros' and 'Externos / históricos' sections render 'Cargando…'; the 8 expected external rows never appear; no hash links to stellar.expert.", "selector": "[data-testid='cms-stakings-external']", "priority": "CRITICAL"}
+    ],
+    "integration_issues": [
+      {"flow": "Treasury card load", "issue": "useSWR<Treasury>('/v1/admin/prosper/treasury', api) declared in CmsHeaderWidgets but never fires fetch on mount. Page is marked 'use client' and toast/SWR imports look fine — no JS console errors observed, no requestfailed events, no 4xx/5xx — the request simply isn't sent. Likely root causes to investigate: (a) SWRConfig provider missing/misconfigured higher up the tree, (b) the new components are tree-shaken or imported but not actually mounted (e.g. dynamic import default-export mismatch), (c) tab default state lifting issue. Confirmed working bypass: page.evaluate(fetch('/api/v1/admin/prosper/treasury',{credentials:'include'})) → 200 with full payload from the same browser session.", "affected_selectors": ["[data-testid='cms-treasury-card']","[data-testid='cms-sync-widget']","[data-testid='cms-stakings-external']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_p13_cms_admin.py", "/app/test_reports/pytest/iter28_p13_cms.xml"],
+  "action_items": [
+    "URGENT: Fix /admin/prosper/inversiones — none of the new CMS components fire their SWR fetches. Verify SWRConfig provider, check for any silent error in component mount, and confirm CmsHeaderWidgets + StakingsTab are actually rendered (the wrapper DOM elements with data-testids ARE present, but children show stuck 'Cargando…' / 'DISABLED' / 'Aún no corrió').",
+    "Re-run the page in browser devtools with React DevTools to see if useSWR is invoked; also check for any Next.js cache/proxy issue between /api/* and the FastAPI mount.",
+    "After fix, retest Run-now toast + filter-dropdown scope/asset/status + hash-link 6…4 truncation."
+  ],
+  "critical_code_review_comments": [
+    "page.tsx is 914 lines — split CmsHeaderWidgets, StakingsTab, IntentsTab, PositionsTab, TrustlinesTab into separate files for maintainability.",
+    "TreasuryCell value rendering does not handle the case where balanceUSDC/ARSA arrive as STRING (backend returns '12.25' as string) — verify number formatting (toFixed) does not crash on string inputs.",
+    "useSWR keys are plain strings — keep them centralised in a constant to avoid drift between mutate() callers and useSWR keys (already saw globalMutate('/v1/admin/prosper/stakings?scope=all') hardcoded — will miss the actual SWR key if filters are appended)."
+  ],
+  "updated_files": ["/app/backend/tests/test_p13_cms_admin.py"],
+  "success_rate": {"backend": "100%", "frontend": "10% (page shell + tab buttons + filters render, but all data widgets broken)"},
+  "test_credentials": "admin@prosper.foundation (super_admin via dev-login); client.admin@alemany.capital (negative test).",
+  "seed_data_creation": "Triggered a staking_sync run during backend test; left 8 external positions persisted in positions collection (external=true).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is rock solid (7/7 pytest). Focus retest exclusively on /admin/prosper/inversiones rendering. Use the in-browser fetch trick (page.evaluate) to sanity-check the backend is reachable, then watch the network panel for /api/v1/admin/prosper/* — currently zero requests fire from the page mount.",
+  "rca of the issue": "RCA — Backend & cookie auth are fully functional (verified by both pytest with requests session and in-browser fetch). The page mounts (its outer DOM with data-testids cms-header-widgets/cms-treasury-card/cms-sync-widget/cms-stakings-tab is present), but the SWR fetchers inside CmsHeaderWidgets and StakingsTab never execute — no fetch is sent for any of the 3 new endpoints. No console error, no pageerror, no requestfailed. This indicates either (a) the components are rendered as server components without SWR side-effects, (b) an outer SWR provider is missing causing fetcher swallow, or (c) a build/HMR stale chunk. The 'use client' directive is present on the file, ruling out (a) at source level — but a build cache or wrong barrel re-export could still convert it back to server-only. Recommended next step: hard rebuild the Next.js bundle (rm -rf .next && yarn build/dev), then if the bug persists, sprinkle console.log inside CmsHeaderWidgets to confirm it actually executes on the client."
+}

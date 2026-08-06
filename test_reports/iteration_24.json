@@ -1,0 +1,49 @@
+{
+  "summary": "Phase 15.2 (intl off-ramp + crypto transfers + admin stuck/mark-failed). 23/23 backend pytest assertions PASS. Two frontend syntax errors blocking the /admin/rampa/movimientos page were RCA'd and patched. Sidebar link, internacional page, movimientos page (post-fix), Andes Account transfer modal all render with the required data-testids. One blocker remains in the Phase 15.2 role gate: finance@prosper.foundation cannot execute the new endpoints because its seeded role is 'finance' but _WRITE_ROLES requires 'finance_admin'.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/v1/ramp/international/* and /admin/ramp/movements/{id}/mark-failed",
+       "issue": "finance@prosper.foundation user has role 'finance' (per dev-seed) but the new Phase 15.2 routes use _WRITE_ROLES={'super_admin','finance_admin'}. The finance user therefore gets 403 on every write path the PRD says it should be authorised for. Either re-seed finance@ as 'finance_admin' or add 'finance' to _WRITE_ROLES. Tests fall back to super_admin."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "/admin/rampa/movimientos/page.tsx",
+       "issue": "FIXED by testing agent: DateField() helper component was missing closing `);}` so the StuckPanel function below was being parsed as part of its body (Expected ',', got 'function' at line 203). After closing it, a stale trailing `);}` orphan at lines 379-380 caused a second 'Expression expected' error — also removed.",
+       "selector": "DateField + bottom of file",
+       "priority": "CRITICAL (was blocking the whole movimientos page from compiling)"}
+    ],
+    "integration_issues": [
+      {"flow": "/admin/rampa/internacional — client picker",
+       "issue": "The <select> for CLIENTE renders only the placeholder option 'Elegí un cliente…'. No clients are populated for super_admin, so the rest of the flow (destination account list, add-destination form with data-testid='intl-form-submit', Quote/Execute) cannot be reached through the UI. Backend has clients available; check the data hook on this page.",
+       "affected_selectors": ["select[CLIENTE]", "[data-testid='intl-form-submit']"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase15_2_intl_offramp.py",
+    "/app/test_reports/pytest/phase15_2.xml"
+  ],
+  "action_items": [
+    "Decide on role mapping for Phase 15.2 write endpoints: either include 'finance' in _WRITE_ROLES (ramp_international.py, admin_ramp.py mark-failed) or re-seed finance@prosper.foundation with role='finance_admin'. Currently the only role that can actually exercise these endpoints is super_admin.",
+    "Hook /admin/rampa/internacional page to a client list endpoint so the CLIENTE <select> is populated (currently empty → blocks the rest of the flow visually).",
+    "Review and keep the two syntax fixes I applied in /app/frontend/src/app/admin/rampa/movimientos/page.tsx (DateField close + trailing orphan)."
+  ],
+  "critical_code_review_comments": [
+    "ramp_international.py is ~1000 lines; consider splitting into account / quote / offramp modules per the file-size guideline.",
+    "Both pages had visible JSX brace mismatches that should have surfaced via tsc/eslint pre-commit — recommend running `tsc --noEmit` on the new files before commit.",
+    "_WRITE_ROLES drift: ramp/withdrawal allows {'finance','finance_admin','super_admin'} in other routes but new Phase 15.2 routes only allow {'finance_admin','super_admin'}. Inconsistent, see action items."
+  ],
+  "updated_files": [
+    "/app/frontend/src/app/admin/rampa/movimientos/page.tsx",
+    "/app/backend/tests/test_phase15_2_intl_offramp.py"
+  ],
+  "success_rate": {"backend": "100% (23/23)", "frontend": "70% — pages render, transfer-modal verified; intl add-destination flow blocked by empty client picker"},
+  "test_credentials": "admin@prosper.foundation (super_admin) via GET /api/v1/auth/dev-login?email=...; finance@prosper.foundation is seeded as 'finance' (NOT 'finance_admin'). Gateway internal token: dev-internal-token-change-me.",
+  "seed_data_creation": "Created intl PYG destination account for org_seed_alemany via API (TEST_-prefixed account_number). Synthesised one Pending intl_offramp ramp_movement (mv_test_p152_*) with created_at 48h ago via PyMongo to exercise stuck list + mark-failed end-to-end (cleaned up after test class).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend Phase 15.2 fully exercised by /app/backend/tests/test_phase15_2_intl_offramp.py — reuse it as regression. All write endpoints are tested with super_admin because of the role-gate bug above; once main agent fixes the role mapping, swap the `finance` fixture to login as finance@prosper.foundation and rerun. Frontend Andes account tab transfer flow is wired with expected data-testids (andes-transfer-open-btn, andes-transfer-modal, andes-transfer-asset, andes-transfer-chain, andes-transfer-amount, andes-transfer-to-address, andes-transfer-submit). Movimientos page renders post-fix; Stuck panel only shows when stuck movements exist (verified hidden state). Internacional page renders cotization + country picker + sidebar link but client <select> is empty so the second half of that flow (destination form, intl-form-submit, quote, execute) was not reachable via UI.",
+  "rca of the issue": "1) Movimientos page build error: DateField component body was opened with `return (\\n  <label …>\\n     …\\n  </label>` but the file proceeded directly to `// Phase 15.2 · C — Stuck movements\\nfunction StuckPanel() {…}` without the matching `);}` — SWC parser then saw `function` where it expected the next JSX attribute/value, hence 'Expected ,, got function' at line 203. Fix: append `);\\n}` after `</label>`. A second orphan `);}` was lingering at the very end of the file (lines 378-380) from earlier hand-edits; removed. 2) finance@ 403s: roles in dev-seed use bare 'finance' while Phase 15.2 routes whitelist 'finance_admin'. Mismatch is data not code, but visible end-to-end."
+}

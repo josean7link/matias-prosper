@@ -1,0 +1,41 @@
+{
+  "summary": "Phase 14 — Andes Adapter + ARSa UI verified end-to-end. Backend pytest 8/8 PASS (test_phase14_andes_ramp.py). Frontend Playwright smoke on /client and /admin/clients/org_seed_alemany PASS: ARSa card + Cuenta Andes tab render all required data-testid elements with correct ARSa label, $ symbol, 'peso digital 1:1' caption, chain=stellar, CVU 0000 0037 3517 7792 1768 17, alias orgseedale.andes.mock, wallet CPSTKSTXMPBVJVQGPYEUPIPCWATIKO4K8MWESZZATNKG7VDWCW000000. Simulate-deposit via Node gateway (POST http://localhost:8090/dev/simulate-deposit, X-Internal-Token=dev-internal-token-change-me) increases the ARSa balance shown by /api/v1/ramp/accounts/{ec}/balances. super_admin override (?org_id=org_seed_alemany) returns Alemany's account; client_admin override is correctly ignored (security boundary). Retry button on admin tab triggers POST /api/v1/ramp/accounts/org_seed_alemany/retry?org_id=org_seed_alemany → 200 with sonner toast 'Reintento → Aprobada'. Regression: /client dashboard KPIs, charts, positions and transactions still render correctly with the new ArsaAccountCard on top.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/client ArsaAccountCard + /admin Cuenta Andes tab", "issues": ["Visual label is rendered uppercase via CSS text-transform so it shows 'ARSA' / 'ARSA' on screen even though the source string is correctly 'ARSa' (component code line 99 + balances table). Minor styling concern: PRD specifies 'ARSa' with lowercase 'a'. Either drop uppercase utility on the ARSa label tokens or pre-format. Underlying data and accessibility text (innerHTML) is correct."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase14_andes_ramp.py",
+    "/app/test_reports/pytest/phase14_andes_ramp.xml"
+  ],
+  "action_items": [
+    "(Optional, cosmetic) On the ArsaAccountCard amount-suffix badge and the SALDOS POR ACTIVO asset cell, remove the CSS uppercase utility so the rendered label stays 'ARSa' (matches Phase 14 PRD exactly). Currently shown as 'ARSA' due to text-transform.",
+    "(Doc nit) /app/memory/test_credentials.md says client.admin@alemany.capital -> org_seed_alemany_capital but the seeded org_id is actually org_seed_alemany. Update the credentials doc to avoid confusion for future agents."
+  ],
+  "critical_code_review_comments": [
+    "routes/ramp_routes.py _ASSET_PRETTY is a private module-level constant — consider sourcing labels from a single source of truth (e.g., ramp/assets.py) used by both backend and frontend to avoid drift if a new asset is added.",
+    "ensure_org_ramp_account's NotSupportedByProvider branch on step (1) returns a stub doc with onboarding_status='error' but never logs an audit entry — _refresh_account does. Add a log_action call for parity with retry/balances/etc.",
+    "get_balances skeleton fallback (no rows → return ARSa@0) is convenient for UI but masks provider returning a real empty payload. Consider differentiating 'empty' vs 'no_account' in the as_of/freshness field so the UI can show a tooltip ('aún no inicializado' vs '0 ARSa').",
+    "Frontend ArsaAccountCard uppercase-styled label conflicts with the explicit PRD requirement label='ARSa'. Worth a small change to the className list (drop uppercase) on the label span.",
+    "Gateway POST /dev/simulate-deposit currently accepts snake_case `user_id` only (camelCase `userId` -> 400). If any other backend code path uses camelCase it will silently fail; consider accepting both or documenting it loudly in andes-gateway/src/server.ts."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase14_andes_ramp.py (NEW)",
+    "/app/test_reports/pytest/phase14_andes_ramp.xml (NEW)",
+    "/app/test_reports/iteration_18.json (NEW)"
+  ],
+  "success_rate": {"backend": "100% (8/8 pytest)", "frontend": "100% (all data-testids present, retry round-trip OK)"},
+  "test_credentials": "GET /api/v1/auth/dev-login?email=client.admin@alemany.capital -> role=client_admin, org_id=org_seed_alemany (NOT org_seed_alemany_capital). GET /api/v1/auth/dev-login?email=admin@prosper.foundation -> role=super_admin, org_id=null.",
+  "seed_data_creation": "Triggered /dev/simulate-deposit on the existing seeded ramp_accounts row (provider_user_id=a760405a-b3c0-4497-98ab-8edf96b7b243) — bumped its ARSa balance to ~152,469.12 ARSa. No new ramp_accounts rows created (idempotency exercised the existing one).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_phase14_andes_ramp.py covers the full Phase 14 backend contract (auth gate, create+idempotent, balances ARSa row, simulate-deposit via gateway, retry, super_admin org_id override, client_admin override ignored). Re-run with: pytest /app/backend/tests/test_phase14_andes_ramp.py -v. Notes: client.admin@alemany.capital maps to org_id=org_seed_alemany (not _capital — credentials.md is stale). Node gateway expects snake_case user_id on /dev/simulate-deposit. UI selectors verified: arsa-account-card, arsa-cvu, arsa-alias, arsa-wallet-address, arsa-deposit-btn, arsa-withdraw-btn (disabled), tab-andes, andes-account-card, andes-balance-row-arsa, andes-retry-btn.",
+  "rca of the issue": "N/A — Phase 14 implementation is correct. The only cosmetic deviation is the uppercase CSS on the ARSa label tokens (PRD expects 'ARSa' but DOM renders 'ARSA' due to text-transform:uppercase). Easy single-line CSS fix."
+}

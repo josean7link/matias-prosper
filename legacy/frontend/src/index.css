@@ -1,0 +1,329 @@
+/* Prosper Platform — Light (default) + Dark theme.
+   Default: matches prosper.foundation (light, blue accent, pill buttons).
+   Dark: institutional control-room variant.
+*/
+@import url("https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;600;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root,
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html, body {
+  background-color: var(--bg);
+}
+
+body {
+  margin: 0;
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+code, pre, .font-mono { font-family: "IBM Plex Mono", Menlo, Monaco, Consolas, monospace; }
+.font-display { font-family: "Chivo", "IBM Plex Sans", sans-serif; letter-spacing: -0.02em; }
+
+/* ---------- Theme tokens ---------- */
+:root {
+  /* Light theme (default, matches prosper.foundation) */
+  --bg: #F5F7FB;
+  --surface: #FFFFFF;
+  --surface-2: #FAFBFD;
+  --surface-hover: #F0F3F8;
+  --border: #E4E8EF;
+  --border-strong: #D0D6DF;
+
+  --fg: #0A0F1C;
+  --fg-muted: #5A6578;
+  --fg-subtle: #8893A7;
+  --brand-fg: #0A0F1C;
+
+  --primary: #0066FF;
+  --primary-hover: #0052CC;
+  --primary-fg: #FFFFFF;
+  --primary-soft: rgba(0, 102, 255, 0.08);
+
+  --success: #00A64F;
+  --warning: #D68A00;
+  --danger: #E53E3E;
+  --info: #0066FF;
+
+  --grid-dot: rgba(10, 15, 28, 0.035);
+  --demo-bg: rgba(214, 138, 0, 0.06);
+  --demo-border: rgba(214, 138, 0, 0.25);
+  --demo-fg: #8B5A00;
+
+  /* shadcn compat */
+  --background: 220 25% 97%;
+  --foreground: 222 48% 8%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 48% 8%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 48% 8%;
+  --primary: 217 100% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 20% 94%;
+  --secondary-foreground: 222 48% 8%;
+  --muted: 220 20% 96%;
+  --muted-foreground: 220 12% 45%;
+  --accent: 220 20% 94%;
+  --accent-foreground: 222 48% 8%;
+  --destructive: 0 75% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 220 20% 94%;
+  --ring: 217 100% 50%;
+  --radius: 0.75rem;
+}
+
+html.dark, :root.dark {
+  --bg: #05070D;
+  --surface: #0A0E17;
+  --surface-2: #0F1420;
+  --surface-hover: #151B2A;
+  --border: #1C2232;
+  --border-strong: #2A3144;
+
+  --fg: #F4F6FA;
+  --fg-muted: #8893A7;
+  --fg-subtle: #5A6578;
+  --brand-fg: #FFFFFF;
+
+  --primary: #3D8BFF;
+  --primary-hover: #5CA0FF;
+  --primary-fg: #FFFFFF;
+  --primary-soft: rgba(61, 139, 255, 0.12);
+
+  --success: #00C853;
+  --warning: #FFAB00;
+  --danger: #FF4D4D;
+  --info: #3D8BFF;
+
+  --grid-dot: rgba(255, 255, 255, 0.04);
+  --demo-bg: rgba(255, 171, 0, 0.08);
+  --demo-border: rgba(255, 171, 0, 0.3);
+  --demo-fg: #FFCF5E;
+
+  --background: 222 40% 4%;
+  --foreground: 220 20% 96%;
+  --card: 222 30% 7%;
+  --card-foreground: 220 20% 96%;
+  --popover: 222 30% 7%;
+  --popover-foreground: 220 20% 96%;
+  --primary: 217 100% 62%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 222 22% 12%;
+  --secondary-foreground: 220 20% 96%;
+  --muted: 222 22% 12%;
+  --muted-foreground: 220 12% 60%;
+  --accent: 222 22% 14%;
+  --accent-foreground: 220 20% 96%;
+  --destructive: 0 75% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 222 25% 15%;
+  --input: 222 22% 14%;
+  --ring: 217 100% 62%;
+}
+
+@layer base {
+  * { border-color: hsl(var(--border)); }
+  body { background: var(--bg); color: var(--fg); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--fg-subtle); }
+  ::selection { background: var(--primary); color: var(--primary-fg); }
+}
+
+/* ---------- Backgrounds ---------- */
+.dot-grid-bg {
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 0 0;
+}
+.wave-bg {
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(0,102,255,0.06) 0%, transparent 70%),
+    radial-gradient(var(--grid-dot) 1.2px, transparent 1.2px);
+  background-size: auto, 28px 28px;
+}
+
+/* ---------- Surface primitives ---------- */
+.prosper-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.prosper-card:hover { border-color: var(--border-strong); }
+.prosper-card--flat { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+
+/* ---------- Buttons ---------- */
+.btn-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.65rem 1.25rem;
+  font-weight: 500;
+  font-size: 14px;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+  line-height: 1;
+}
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-fg);
+  border: 1px solid var(--primary);
+}
+.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+
+.btn-outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1.5px solid var(--primary);
+}
+.btn-outline:hover { background: var(--primary-soft); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: var(--surface-hover); }
+
+/* ---------- Status dots ---------- */
+.status-dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 9999px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* ---------- Data tables ---------- */
+.data-table { border-collapse: collapse; }
+.data-table th {
+  font-family: "IBM Plex Sans";
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  font-size: 11px;
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+.data-table td { font-size: 13px; color: var(--fg); padding: 0.75rem 1rem; }
+.data-table tr { border-bottom: 1px solid var(--border); }
+.data-table tbody tr:hover { background: var(--surface-hover); }
+.data-table tbody tr:last-child { border-bottom: none; }
+
+/* ---------- Nav ---------- */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  margin: 0.125rem 0.5rem;
+  border-radius: 10px;
+  color: var(--fg-muted);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+  text-decoration: none;
+}
+.nav-item:hover { background: var(--surface-hover); color: var(--fg); }
+.nav-item[data-active="true"] {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ---------- Env pill ---------- */
+.env-pill {
+  font-family: "IBM Plex Mono";
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.env-pill[data-env="sandbox"] {
+  background: rgba(214, 138, 0, 0.1);
+  color: var(--warning);
+  border: 1px solid rgba(214, 138, 0, 0.25);
+}
+html.dark .env-pill[data-env="sandbox"] {
+  background: rgba(255, 171, 0, 0.12);
+  color: var(--warning);
+  border: 1px solid rgba(255, 171, 0, 0.35);
+}
+.env-pill[data-env="production"] {
+  background: rgba(0, 166, 79, 0.1);
+  color: var(--success);
+  border: 1px solid rgba(0, 166, 79, 0.3);
+}
+html.dark .env-pill[data-env="production"] {
+  background: rgba(0, 200, 83, 0.12);
+  color: var(--success);
+  border: 1px solid rgba(0, 200, 83, 0.3);
+}
+
+/* ---------- Demo banner ---------- */
+.demo-banner {
+  background: var(--demo-bg);
+  border-bottom: 1px solid var(--demo-border);
+  color: var(--demo-fg);
+}
+
+/* ---------- KPI tiles ---------- */
+.kpi-tile { transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease; }
+.kpi-tile:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+/* Tight grid separators */
+.tight-grid { gap: 1px; background: var(--border); }
+.tight-grid > * { background: var(--surface); }
+
+/* ---------- Launch App button arrow box ---------- */
+.arrow-box {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  background: rgba(255,255,255,0.18);
+  border-radius: 4px;
+}
+
+/* Utility */
+.text-fg { color: var(--fg); }
+.text-fg-muted { color: var(--fg-muted); }
+.text-fg-subtle { color: var(--fg-subtle); }
+.bg-surface { background: var(--surface); }
+.bg-surface-2 { background: var(--surface-2); }
+.border-prosper { border-color: var(--border); }
+
+/* Ensure shadcn Button primary variant has high contrast in both themes */
+button.bg-\[var\(--primary\)\] {
+  color: var(--primary-fg) !important;
+}
+button.bg-\[var\(--primary\)\]:hover {
+  background-color: var(--primary-hover) !important;
+}
+/* Smooth Recharts animation */
+.recharts-surface { overflow: visible; }

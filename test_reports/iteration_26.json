@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 26 — Sanctions/PEP gate + Resend safeguards: 13/13 backend pytest assertions PASS. Frontend admin queue UI verified (renders with sanctions-page testid + 3 tabs pending/clear/flagged + MANUAL (MOCK) flag), full decision modal flow PASS (review → pick-clear → reason → submit → row moves from pending to clear tab). ClientGateBanner verified on /client for client.admin@alemany.capital — banner correctly shows 'VERIFICACIÓN DE ANTECEDENTES EN CURSO' which means alemany's sanctions_status is pending (Andes validated but compliance hasn't cleared yet). Regression: landing, /apply toggle individuo↔empresa, login/dev-login redirect, and 403 on unknown emails all still work. Resend gating (drop dev_otp / nullify magic_link when RESEND_API_KEY is set) verified via static source assert (we never set RESEND_API_KEY in tests, per task spec). Webhook gate proven: after fiat.account.created, sanctions_screenings row is pending+manual, org.kyb_status stays pending, user.status stays invited.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/apply form (Individuo)", "issues": ["Date input is the browser-native HTML date picker (mm/dd/yyyy placeholder) instead of a shadcn calendar component; consistent with iteration 25 observation but worth migrating for cross-browser UX"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iter26_sanctions_gate.py",
+    "/app/test_reports/pytest/iter26_sanctions.xml"
+  ],
+  "action_items": [
+    "None blocking. Optional: migrate /apply birthdate input from native HTML date picker to shadcn Calendar (carry-over from iter25).",
+    "Optional: surface a CTA in the ClientGateBanner pending state ('Contactanos si demora más de 24h') for friendlier UX."
+  ],
+  "critical_code_review_comments": [
+    "routes/sanctions.py L86-102 — when a row already exists in pending and the new screen() returns a conclusive status, the patch is applied AND we return `{**existing, **patch}` but we do NOT mirror the audit log entry. Minor: every auto-decision should also be audit-logged (currently only the initial enqueue is logged).",
+    "routes/ramp_webhook.py L385-397 — sanctions enqueue happens AFTER the CVU/onboarding_status mirror is set. If enqueue_screening raises (caught) the CVU still ends up in ramp_accounts and the org stays sanctions=pending forever. Today there's no retry/backfill mechanism; consider a periodic job that re-scans orgs with cvu but no sanctions_screenings row.",
+    "integrations/email_sender.py — resend send timeout is hard-coded to 10s with no retry; consider exponential retry-once on 5xx so a transient Resend hiccup doesn't lose the OTP (current fallback only writes the row, doesn't re-attempt).",
+    "routes/sanctions.py decision endpoint — when decision=clear AND Andes hasn't yet emitted CVU, we silently leave kyb_status=pending. The activation will only happen if a fresh fiat.account.created arrives later. If Andes already processed BEFORE sanctions enqueue (race), there is no re-trigger. Worth adding a periodic reconcile or call into the activation block from both endpoints."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter26_sanctions_gate.py"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "100% — admin sanctions page renders, all 3 tabs work, decision modal end-to-end works, ClientGateBanner visible with sanctions-pending text"},
+  "test_credentials": "admin@prosper.foundation (super_admin) and client.admin@alemany.capital (client_admin) via GET /api/v1/auth/dev-login. GATEWAY_INTERNAL_TOKEN read from /app/backend/.env for webhook simulation.",
+  "seed_data_creation": "Multiple TEST individual applicants created via /api/v1/onboarding/apply with @gmail.com emails (test.gate.<hex>@gmail.com and test.apply.<hex>@gmail.com). Each gets a ramp_accounts row seeded directly in mongo then a fiat.account.created webhook fired against /api/v1/internal/ramp/webhook. After tests, several orgs are left in clear/flagged/pending status — the admin queue UI screenshots show them. No cleanup performed; org_ids prefixed by 'Sanctions Gate test.gate.*'. Note: also created Sancho Panza (org_48272fa2484e) pre-existed as already-clear test data per task brief.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_iter26_sanctions_gate.py as regression for the sanctions/PEP gate + Resend safeguards. Key Playwright selectors verified: sanctions-page, sanctions-tab-pending|clear|flagged, sanctions-row-{org_id}, sanctions-review-{org_id}, sanctions-modal, sanctions-pick-clear, sanctions-pick-flagged, sanctions-reason, sanctions-submit, client-gate-banner. Webhook simulation pattern: pre-insert a ramp_accounts doc with provider_user_id then POST /api/v1/internal/ramp/webhook with X-Internal-Token header. RESEND_API_KEY remains intentionally empty to keep dev_otp + magic_link visible — gating verified via static source asserts. To E2E-test the Resend live mode, set RESEND_API_KEY on a separate run and re-execute test_server_drops_dev_otp_when_resend_is_set as a runtime check.",
+  "rca of the issue": "No bugs found. The sanctions gate is correctly wired end-to-end: (1) /onboarding/apply seeds sanctions_status=pending, (2) fiat.account.created webhook calls enqueue_screening (ManualProvider returns pending) and refuses to flip kyb_status because sanctions_status != clear, (3) admin queue + decision endpoints flip both org.sanctions_status and conditionally activate (clear + Andes ok) or reject (flagged → kyb_status=rejected + users paused), (4) /me + /client/me surface sanctions_status/sanctions_locked/can_operate, (5) admin UI renders correctly with all required testids and decision modal works, (6) ClientGateBanner shows the right Spanish copy for pending. The 9-test backend file plus the Playwright UI run together cover every numbered case in the review request."
+}

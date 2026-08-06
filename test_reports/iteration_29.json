@@ -1,0 +1,24 @@
+{
+  "summary": "P1-3 frontend RETEST after main agent's fix. ALL 8 acceptance criteria PASS. The duplicate 'use client' removal + SWR fetcher arrow-wrapping fixed the bug from iteration_28. /admin/prosper/inversiones now hydrates CmsHeaderWidgets and StakingsTab correctly — Treasury balances populated (12,25 USDC / 100,00 ARSa / 0,00 XLM), staking sync shows ENABLED + processed=8 + external=8 + cada 5m, Run-now button fires POST /staking-sync/run, updates finished_at timestamp (03:19:03 → 03:19:20), and surfaces toast 'Staking sync ejecutado'. External section shows 8 rows with stellar.expert hash links + 'pruebas viejas de Prosper' note. Ours section shows the empty-state copy. Scope and Asset filters both work correctly (external goes from 8 → 5 USDC rows with 0 ARSa when asset=USDC). Network panel confirms 5 distinct fetches: /treasury, /staking-sync/status, /stakings?scope=all, /stakings?scope=external|ours, /stakings?scope=all&asset=usdc. Backend not retested per request.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/iter29_initial.png", "/app/test_reports/iter29_final.png"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "page.tsx is still 917 lines — extract CmsHeaderWidgets, StakingsTab, IntentsTab, PositionsTab, TrustlinesTab into separate files (each ~150-200 lines) for maintainability. Not blocking but recommended before next sprint.",
+    "Centralise SWR cache keys (e.g. `/v1/admin/prosper/treasury`, `/v1/admin/prosper/staking-sync/status`, dynamic `/v1/admin/prosper/stakings?...`) in a `cmsKeys` constant. The hardcoded `globalMutate('/v1/admin/prosper/stakings?scope=all')` call after Run-now will silently MISS the actual SWR key if the user has any filter applied (asset/status), causing stale data until the next 60s refresh.",
+    "Consider extracting the `(p: string) => api(p)` fetcher into a single module-scoped const to avoid creating a new function on every render (SWR uses key equality, but stylistically cleaner)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (not retested, last iteration 7/7)", "frontend": "100% (8/8 acceptance criteria)"},
+  "test_credentials": "admin@prosper.foundation via /api/v1/auth/dev-login magic link (per /app/memory/test_credentials.md).",
+  "seed_data_creation": "Run-now click during testing triggered a new staking_sync run, replacing the previous last_run record. Still 8 external positions, no ours/positions created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P1-3 CMS migration on /admin/prosper/inversiones is fully working — Treasury card + Sync widget + Stakings tab (ours empty / 8 external) + all filters + Run-now flow validated end-to-end in browser. No follow-up tests required unless new features added. Watch the mutate-key drift caveat in code-review comments if filters are added.",
+  "rca of the issue": "Iteration_28 RCA was correct: a duplicate 'use client' directive (which Next.js silently treats as a regular string literal in the body of the module, NOT as a client directive — only the first line is recognised) made the entire file render as a server component, so the useSWR hooks never executed on the client. The fix in iteration 29 collapsed the directive to line 1 only and additionally wrapped the SWR fetcher arg in `(p: string) => api(p)` to match the proven IntentsTab pattern. After a clean .next rebuild, the bug is fully gone and confirmed by direct network observation (5 GETs + 1 POST fire from the page on mount + interactions)."
+}

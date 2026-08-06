@@ -1,0 +1,51 @@
+{
+  "summary": "FASE 11A - Portal Cliente / Developer & Integration core tested end-to-end. Backend Phase 11A regression: 13/13 PASS (test_phase11_developer.py 7/7 PASS unchanged + new test_phase11a_extras.py 6/6 PASS covering API key listing shape, webhook PATCH pause/activate/events/description, available_events exposure, deliveries scoping, feature-interest GET, and non-admin 403 enforcement). Plaintext API key + webhook secret are returned ONLY in the create/rotate response with `warning` field; listings exclude `secret_hash`, `secret`, `plaintext`, and `_id`. Production scope is correctly blocked when org.env=sandbox (HTTP 400 'Tu organizacion todavia esta en sandbox'). Frontend: all 5 client developer pages render with dense data-testids: /client/api-keys (apikey-new, apikey-table, apikey-row-{id}, apikey-rotate-{id}, apikey-revoke-{id}, badge-sandbox), /client/webhooks (webhook-new, webhook-empty, webhook-create-modal, webhook-create) with 10 event checkboxes matching CLIENT_EVENTS server list, /client/developers (sticky docs-sidebar with 6 sections quickstart/auth/endpoints/webhooks/sdks/errors, every CodeTabs block has tab-curl/tab-js/tab-py + copy buttons), /client/sdk (sdk-js, sdk-py cards + sdk-postman-download), /client/widget (live preview reacts to theme dark/light, color #FF0099 applied as rgb(255,0,153) on Continue button inline-style, amount 12345 renders in preview, snippet tabs HTML+React + copy, save persists), /client/coming-soon (5 feature cards lending/multi_asset/card/marketplace/yield_aggregator, Notificame -> Anotado after click, idempotent on 2nd click). AppShell client nav has all 13 expected items: Dashboard, Invertir, Posiciones, Cargar dinero, Retirar, Movimientos, API Keys, Webhooks, Developers, SDK, Widget, Perfil, Proximamente. Production radio in Nueva API Key modal is correctly grayed out when org.env=sandbox.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "missing_data_testids": [
+      {"page": "/client/api-keys (modal)", "missing": ["apikey-name-input", "apikey-scope-sandbox", "apikey-scope-production", "apikey-create-submit", "apikey-cancel"], "note": "Nueva API Key modal has no data-testid on the name input, the Sandbox/Production radio buttons, or the Crear / Cancelar buttons. The visual disabled-state of Production works correctly (aria-disabled style), but E2E selectors must fall back to text matching."},
+      {"page": "/client/webhooks (modal)", "missing": ["webhook-url-input", "webhook-event-checkbox-{event}", "webhook-description-input", "webhook-create-submit", "webhook-cancel"], "note": "Modal exposes webhook-create-modal + webhook-create wrappers but individual form fields (URL, 10 event checkboxes, description) and the action buttons inside the modal lack testids."}
+    ],
+    "console_warnings": [
+      {"observation": "Every authenticated /client/* page emits 3-6 generic 'Failed to load resource: 403' errors in the browser console (no path printed). Same pattern was already noted in iteration_13; not a Phase 11A regression. Likely a background fetch (notifications? unread count?) gated to a different role. Worth tracing in a future iteration but does not break any flow."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase11_developer.py",
+    "/app/backend/tests/test_phase11a_extras.py",
+    "/app/test_reports/pytest/phase11_developer.xml",
+    "/app/test_reports/pytest/phase11a_extras.xml"
+  ],
+  "action_items": [
+    "(Recommended) Add data-testids inside the Nueva API Key modal: apikey-name-input, apikey-scope-sandbox, apikey-scope-production, apikey-create-submit. Currently only the open trigger (apikey-new) and the table rows have testids; modal selectors fall back to text.",
+    "(Recommended) Add data-testids inside the Nuevo endpoint webhook modal: webhook-url-input, webhook-description-input, one webhook-event-checkbox per event, and webhook-create-submit / webhook-cancel.",
+    "(Optional) Trace and silence the 3-6 generic 403 console errors on every /client/* page (pre-existing, not Phase 11A)."
+  ],
+  "critical_code_review_comments": [
+    "client_developer.py (363 lines) is single-file but already mixes 4 sub-resources (api-keys, webhooks, widget, feature-interest). Within the 700-line guideline today but consider splitting per resource (mirroring routes/admin_clients/) once 11B adds profile/MFA/sessions to avoid hitting the threshold.",
+    "register_feature_interest is correctly idempotent on (org_id, user_id, feature) but there is NO unique index on that triple in db.py — under concurrent double-clicks two docs could be inserted. Add a unique compound index in seed.create_indexes for FEATURE_INTEREST: (org_id, user_id, feature).",
+    "reveal_webhook_secret returns the full secret on demand without any reveal-window throttling or audit-log rate-limit. The audit row is recorded (good) but a malicious client_admin can keep calling it. Consider returning only the last 8 chars after first creation, or rate-limit by webhook_id.",
+    "create_webhook validates events against CLIENT_EVENTS but available_events returned by GET /webhooks is hardcoded here as a separate list from admin_clients/webhooks.AVAILABLE_EVENTS (which is imported but unused locally). The two could drift — recommend deleting the local CLIENT_EVENTS and reusing AVAILABLE_EVENTS, or vice-versa.",
+    "test_webhook hits the real URL (httpbin.org/anything) synchronously inside the request handler. If httpbin is slow or down the API call blocks for the full timeout. Consider firing _deliver in a background task and returning 202 with the delivery_id, then polling via /deliveries.",
+    "widget POST /widget/config does NOT validate color is a real hex string — Pydantic accepts any string. A malicious client_admin could store '<script>...' which would later be reflected into the snippet UI. Validate with a regex `^#[0-9A-Fa-f]{6}$`.",
+    "Login session leaves a stale JWT cookie on the preview domain; we observed 38+ test-created API keys from prior iterations still in the org. Consider an admin cleanup endpoint or a TEST_ prefix-filter cron for preview env to keep the listing readable for E2E."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase11a_extras.py (NEW, 6 tests, all PASS)",
+    "/app/test_reports/pytest/phase11a_extras.xml (NEW)",
+    "/app/test_reports/pytest/phase11_developer.xml (re-run, 7/7 PASS)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "client.admin@alemany.capital (approved client_admin, org=sandbox) and compliance@prosper.foundation (non-admin staff used to verify 403 on mutations), both via GET /api/v1/auth/dev-login?email=...&next=...",
+  "seed_data_creation": "Created and cleaned up multiple ephemeral API keys (TEST_listshape, phase11a-test, rotate-test) and webhooks (patch-test, deliveries-test, phase11 test) during pytest runs. Registered feature-interest for 'lending' and 'card' on Alemany (idempotent; intentional - exercises the GET listing). The Notificame click in the UI also persisted 'yield_aggregator' for Alemany.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 11A backend is solid (13/13). All 5 developer pages render correctly with dense testids on the OUTER scaffolding (page, table, rows, action buttons, tabs, code blocks). The two known gaps are inside MODALS (Nueva API Key + Nuevo endpoint) where form fields and submit buttons lack testids — selectors fall back to text + role. For Phase 11B (profile + MFA + sessions) the same conventions are expected. The accumulated 38+ liquid positions on Alemany from Phase 9 mock state still persist and the 403 generic console noise on every /client/* page is pre-existing.",
+  "rca of the issue": "N/A - no blocking issues. Phase 11A passes end-to-end. The two recommended testid additions are usability improvements for future E2E, not regressions. The 403 console noise is unchanged from iteration_13 and is unrelated to Phase 11A endpoints (Phase 11A endpoints all return 200/400/403/404 as expected, confirmed by 13/13 pytest pass)."
+}
