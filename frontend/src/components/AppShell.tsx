@@ -36,6 +36,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/admin/business",   label: "Negocio",       icon: ChartBar, i18nKey: "admin_business" } as any,
   { href: "/admin/compliance", label: "Compliance",    icon: ShieldCheck, i18nKey: "admin_compliance" } as any,
   { href: "/admin/clients",    label: "Clientes",      icon: Users, i18nKey: "admin_clients" } as any,
+  { href: "/admin/staking",    label: "Staking",       icon: Coins, i18nKey: "admin_staking" } as any,
   { href: "/admin/rampa/cuentas",     label: "Rampa · cuentas",     icon: Wallet, i18nKey: "admin_ramp_accounts" } as any,
   { href: "/admin/rampa/movimientos", label: "Rampa · movimientos", icon: ArrowDownUp, i18nKey: "admin_ramp_movements" } as any,
   { href: "/admin/rampa/internacional", label: "Rampa · internacional", icon: Globe, i18nKey: "admin_ramp_intl" } as any,
@@ -55,6 +56,7 @@ const ADMIN_NAV: NavItem[] = [
 const CLIENT_NAV: NavItem[] = [
   { href: "/client",             label: "Dashboard",         icon: LayoutDashboard, i18nKey: "dashboard" } as any,
   { href: "/client/invest",      label: "Invertir",          icon: TrendingUp,      i18nKey: "invest" } as any,
+  { href: "/client/staking",     label: "Staking",           icon: Coins,           i18nKey: "staking" } as any,
   { href: "/client/investments", label: "Posiciones",        icon: Coins,           i18nKey: "positions" } as any,
   { href: "/client/onramp",      label: "Cargar dinero",     icon: ArrowDownUp,     i18nKey: "load_money" } as any,
   { href: "/client/offramp",     label: "Retirar",           icon: ArrowDownUp,     i18nKey: "withdraw" } as any,

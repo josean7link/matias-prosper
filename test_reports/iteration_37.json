@@ -1,0 +1,25 @@
+{
+  "summary": "End-to-end test of the new /admin/staking module (P1-3 Feb 2026). Backend: 14/14 pytest cases pass covering auth gating (401 anon), CMS treasury (200 with USDC≈31.25 / ARSa≈100100), /cms/wallets (200 with 13 items including seeded qa-staking-module@prosper.foundation → GDE4FZ...ES6NR), /cms/cashin idempotent (reused=true, same wallet returned for end modality), 422 on invalid modality/missing prosperId, staking-sync status+run, stakings list with filters, and regression on /admin/prosper/treasury after adapter migration to /api/v1/cliente/*. Frontend: sidebar item nav-admin_staking navigates to /admin/staking, admin-staking-page renders, all 4 treasury widgets show real values (USDC 31,25 / ARSa 100.100 / XLM 0,00 / sync widget with 'cada 5 min, última: 8:56 p.m. · 10 procesados'), Sincronizar button executes POST /staking-sync/run successfully, all 3 tabs (Stakings/Wallets CMS/Nueva solicitud) navigate correctly, staking-table shows real rows (propio/externo badges, stellar.expert hash links), filters scope/asset/status refresh list to '1 stakings' for ours+usdc+active, wallets tab shows 13 wallets, client-side search filters to 1 hit for 'qa-staking-module', cashin form submit with 'qa-staking-module@prosper.foundation' + modality 'end' returns exact seeded wallet GDE4FZC7JP443JBYEB4MTTXOMZIFOA6W5E6LOL3Y6SYSW6LOLYAES6NR displayed in staking-cashin-address. Regression /admin/prosper/inversiones loads treasury widget correctly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/staking sync widget", "issues": ["Sonner toast on Sincronizar success was not detected by test selector [data-sonner-toast] — the widget updates correctly so functionally fine, but toast may render into a portal or dismiss too fast to be user-visible. Low priority — verify toast lifetime/portal target if user reports missing feedback."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_staking_module.py", "/app/test_reports/pytest/staking_module.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "phase22_admin_yield.py at ~740 lines — still under the 700-line hint but growing; consider extracting the CMS-passthrough endpoints (treasury/stakings/staking-sync/cms wallets/cms cashin) into a dedicated router file (phase_p1_cms_staking.py) for maintainability.",
+    "GET /admin/prosper/cms/wallets forwards the raw CMS payload including a 'raw' key — good for debugging but may leak partner-side fields. Consider stripping in production mode.",
+    "Frontend page.tsx (~540 lines) is a single file with 3 tab components + widgets. Fine for now but could be split into components/staking/{TreasuryAndSync,StakingsTab,WalletsTab,NewCashinTab}.tsx if it keeps growing."
+  ],
+  "updated_files": ["/app/backend/tests/test_staking_module.py"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (all flows passed)"},
+  "test_credentials": "admin@prosper.foundation via GET /api/v1/auth/dev-login (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Used the existing partner-side QA user qa-staking-module@prosper.foundation + wallet GDE4FZ...ES6NR (as instructed — no new CMS users created).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The /admin/staking module ships green. Reuse test_staking_module.py for regression. IMPORTANT: never create fresh emails on /cms/cashin — each call creates a REAL mainnet CMS user; always reuse qa-staking-module@prosper.foundation + modality 'end' (idempotent reused=true). CMS partner may return 502 intermittently; tests already retry once on 502 for treasury/wallets/cashin. PROSPER_MODE=development points to REAL mainnet CMS."
+}

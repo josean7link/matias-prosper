@@ -2299,3 +2299,98 @@ Permite verificar Resend cableado en prod sin esperar depósito real.
 - Rate limit explícito por user (el cache TTL ya actúa como rate-limit
   efectivo).
 
+
+
+## ✅ Módulo "Gestión de Staking" — /admin/staking (2026-06, DONE, tested 100%)
+
+- Nuevo ítem "Staking" en sidebar admin (AppShell, i18nKey `admin_staking`).
+- Página `frontend/src/app/admin/staking/page.tsx`: widgets tesorería CMS + sync
+  manual, tabs Stakings (tabla con filtros scope/asset/status, links stellar.expert),
+  Wallets CMS (listado crudo `/cliente/users`, búsqueda client-side), Nueva
+  solicitud Cash-In (email/prosperId + modalidad end|month, SIN modal de
+  confirmación por pedido del usuario).
+- Endpoints passthrough nuevos en `phase22_admin_yield.py`:
+  `GET /admin/prosper/cms/wallets` (read roles) y `POST /admin/prosper/cms/cashin`
+  (write roles, audit `admin.prosper.cms.cashin`).
+
+### ⚠️ MIGRACIÓN CMS PARTNER (junio 2026) — CRÍTICO para futuros agentes
+El CMS (`cmsback.protocol-prosper.io`) cambió TODAS sus rutas:
+- `/api/v1/cms/users`   → `/api/v1/cliente/users` (GET; nuevo POST crea usuario por email)
+- `/api/v1/cms/cashin`  → `/api/v1/cliente/cashin` body `{clientEmail, cashin}` (ANTES `{prosperId, cashin}`)
+- `/api/v1/cms/staking` → `/api/v1/cliente/staking` (mismas filas + campo `email`)
+- `/api/v1/cms/treasury`→ `/api/v1/admin/treasury`
+La identidad ahora es EMAIL-based. `real.py::create_user_wallet` hace primero
+POST `/cliente/users {email}` (tolerante a existente) y luego cashin. El match
+por modalidad acepta prosperId/userId/email. `test_prosper_real_live` volvió a verde.
+- QA user idempotente en CMS real: `qa-staking-module@prosper.foundation` (end)
+  → wallet `GDE4FZC7JP443JBYEB4MTTXOMZIFOA6W5E6LOL3Y6SYSW6LOLYAES6NR`.
+  NUNCA crear emails nuevos en tests (cada alta crea usuario/wallet REAL mainnet).
+- Test suite: `backend/tests/test_staking_module.py` (17 tests, testing agent).
+- Ajustes 2026-06 (iteration_38, 100% verde): widget "Tesorería · XLM" eliminado;
+  nuevo box "Nueva cuenta CMS" en tab Wallets (POST `/admin/prosper/cms/users`
+  {email} → passthrough `/cliente/users`; 409 si el usuario ya existe).
+  QA users reales creados en CMS: qa-cuenta-nueva@ (userId 20), qa-cuenta-ui-test@.
+- UX 2026-06 (iteration_39/40, 100% verde): paginado client-side (PAGE_SIZE=10,
+  componente Pager) en tabs Stakings y Wallets CMS; búsqueda en Wallets resetea
+  página; botón "Nueva solicitud" por fila de wallet → abre tab cash-in con el
+  email pre-cargado (prop initialProsperId + key remount).
+  Lección: tras un ENOSPC, VERIFICAR que los edits persistieron (un edit cayó
+  en un fragmento duplicado corrupto y se perdió al truncar).
+- Fix 2026-06 (iteration_41, 100% verde): tab cash-in ahora pide "Email del
+  cliente" (no prosperId) + selector obligatorio de moneda ARSa/USDC.
+  IMPORTANTE: la API del CMS (CashinDto) NO tiene campo de moneda — el asset
+  se registra solo en audit_logs local + instrucciones UI; el CMS registra el
+  activo efectivamente depositado. Body backend: {email, modality, asset}
+  (prosper_id sigue aceptado como alias legacy).
+- Ajuste 2026-06: selector ARSa/USDC ELIMINADO del form de cash-in a pedido del
+  usuario (el CMS no lo acepta); el form quedó solo email + modalidad. El campo
+  `asset` opcional sigue existiendo en el backend (inofensivo, no requerido).
+- Enriquecimiento 2026-06 (iteration_42, 100% verde): tabla Stakings con
+  columnas Cliente(email)/Tasa/Vencimiento + fila expandible con TODO el
+  detalle (intereses acumulado/cobrado/proyectado, devengado 24h,
+  next_payout {fecha,monto}, capital rescatado, links contrato Soroban y
+  deposit_hash); chips by_org; sync widget con nuevos/actualizados; meta
+  tesorería (modo+timestamp). staking_sync ahora persiste
+  projected_interest/daily_interest/next_payout. XLM excluido por pedido.
+- 2026-06 (iteration_43, 100%): usuario reportó "no se muestra el staking
+  nuevo" → root cause EXTERNO: el CMS no lo devuelve en /cliente/staking
+  (el registro se crea recién cuando el CMS detecta el depósito y stakea
+  on-chain). Paridad backend↔UI verificada (13/13). Fix UX: lista Stakings
+  con SWR refreshInterval 30s. Deuda conocida: 3 filas locales "stale" que
+  ya no existen en el feed CMS (el sync no borra ausentes) — memos
+  1781049010, 1780854012, 1781102398.
+- Fail pre-existente sin relación: `test_p13_cms_admin::test_stakings_all` asume
+  8 stakings externos hardcodeados; el CMS real hoy tiene 10 (drift de datos vivos).
+
+### Nota entorno (recurrente)
+El disco /app se llena por auto-gc de git sobre repo de 6.2GB (frontend/.next
+trackeado). `gc.auto=0` ya seteado. Si mongo cae en FATAL: borrar
+`.git/objects/pack/tmp_pack_*` y `.git/objects/*/tmp_obj_*`, arrancar mongodb.
+
+
+## 2026-06 — Fork: i18n Staking + higiene git (iteration_44, 100%)
+- **Pedido usuario**: "staking disponible para todos, traducido en inglés y español" + actualizar .gitignore.
+- **i18n staking (next-intl)**: namespace `staking` agregado a `messages/{en,es}.json`
+  (~90 claves: tabs, filtros, tabla, detalle expandido, wallets, cash-in, tesorería,
+  sync, page headers, toasts). `StakingTabs.tsx`, `admin/staking/page.tsx` y
+  `client/staking/page.tsx` refactorizados a `useTranslations("staking")`.
+  Formatos localizados: es-AR / en-US vía `useLoc()` (fechas y números).
+  Nota de stakings externos y estados (activo/vencido/liquidado) también traducidos
+  (antes venían crudos del backend).
+- **Acceso universal verificado**: cliente retail (org personal), partner y admin —
+  middleware no bloquea /client/staking, backend usa get_current_user sin gate de rol.
+- **Higiene git (P0 parcial)**: `frontend/.next` UNTRACKED + `.gitignore` actualizado
+  (`.next/`, `frontend/.next/`). Detiene el crecimiento del repo (5.8GB). Los ~3.5GB
+  de objetos sueltos son historial alcanzable — NO hacer gc/repack con <2GB libres ni
+  filter-repo (rompe rollback). Ver `/app/memory/disk_git_hygiene.md`. `.env` siguen
+  trackeados a propósito (requisito deploy Emergent).
+- **Testing**: iteration_44 frontend 100% (ES y EN completos en ambos portales,
+  paginación, prefill cash-in, validación email, widgets admin).
+- **Deuda detectada**: banner KYC ("Verificación de antecedentes en curso") queda en
+  español con locale EN — componente compartido fuera del namespace staking.
+
+### Backlog vigente (sin cambios)
+- P0: CVU auto-sync post-onboarding (poller + webhook fast-path).
+- P1: Deposit Watcher no cableado al startup de server.py.
+- P1: fixture CUIT `.zfill(8)` en test_iter27_activation_helper.py.
+- P1: ARSa Safety Backup Poller. P2: extraer KycCaptureForm; i18n banner KYC.

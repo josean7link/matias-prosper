@@ -1,0 +1,32 @@
+{
+  "summary": "Validated parity backend↔UI and 30s auto-refresh on /admin/staking (Stakings tab). All 5 requested checks PASS. Backend GET /api/v1/admin/prosper/stakings?scope=all returns total=13; UI shows exactly '13 stakings' with pagination 1/2 (10 rows on page 1). SWR refreshInterval=30_000 confirmed at frontend/src/app/admin/staking/page.tsx:231. Network trace during 65s idle window recorded 2 additional /stakings requests (at ~30s and ~60s). Row expansion (staking-row-detail-0) remained open across a full polling cycle (32s). Sincronizar button triggered /staking-sync/run and the list revalidated within 30s (new /stakings request observed). Backend sanity confirmed via UI widget: sync widget shows 'última: 6/8/26, 10:04 p.m. - 10 procesados (0 nuevos, 2 actualizados)' → processed=10 matches expectation.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/staking_ui.png"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "page.tsx is 765 lines — consider splitting StakingsTab, TreasuryTab, WalletsTab into separate files for maintainability (non-blocking).",
+    "SWR refreshInterval hardcoded (30_000, 60_000) — extract to constants for consistency across tabs."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "seed_data_creation": "None (read-only test as instructed)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Módulo /admin/staking totalmente verde. Paridad backend/UI = 13 filas. Polling SWR de 30s comprobado via network trace. Row expansion y sync flow OK. Nada por reportar.",
+  "evidence": {
+    "backend_total": 13,
+    "ui_total_indicator": "13 stakings",
+    "ui_pagination": "1 / 2",
+    "polling_requests_in_65s": 2,
+    "polling_baseline_url": "/api/v1/admin/prosper/stakings?scope=all",
+    "swr_refresh_interval_code_line": "frontend/src/app/admin/staking/page.tsx:231 refreshInterval: 30_000",
+    "row_expansion_persists_across_polling": true,
+    "sync_triggers_revalidation_within_30s": true,
+    "sync_widget_processed": 10
+  }
+}

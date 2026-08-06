@@ -1,0 +1,22 @@
+{
+  "summary": "Frontend-only verification of /client/staking (retail personal org) and /admin/staking (internal_admin) with next-intl EN/ES translations. All 6 scenarios PASS: (1) retail client maria.test+1780679716@individuo-prosper.io can access /client/staking and see the 3 tabs (Stakings, Wallets CMS, Nueva solicitud), (2) ES/EN switch via prosper_locale cookie works — every filter/table header/badge/status text translates correctly (Todos↔All, Activo: todos↔Asset: all, Estado: todos↔Status: all, Actualizar↔Refresh, Cliente/Activo/Modalidad/Capital/Tasa/Estado/Vencimiento/Wallet/Hash/Origen ↔ Client/Asset/Modality/Principal/Rate/Status/Maturity/Wallet/Hash/Origin, propio/externo ↔ ours/external, activo/vencido/liquidado ↔ active/matured/redeemed), (3) Stakings tab loads 13 rows from CMS, pager shows '1–10 de 13' / '1–10 of 13', prev/next translated (← Anterior / Siguiente → and ← Previous / Next →); row-expand-0 detail contains Inicio/Vencimiento/Interés/Memo/Position ID in ES (and the corresponding EN labels), (4) Wallets CMS tab loads wallets, click on staking-wallet-cashin-btn-0 ('Nueva solicitud' / 'New request') navigates to Nueva solicitud tab with email prefilled ('fguevara@alfredpay.io'), (5) Nueva solicitud form renders with datalist, modality end/month with translated label+description ('end · Al final'/'end · At maturity', 'month · Mes a mes'/'month · Monthly'), submit btn 'Crear solicitud de cash-in'/'Create cash-in request', empty-email submit shows translated toast 'Ingresá el email del cliente' — no real CMS request was created, (6) /admin/staking shows CMS widgets translated: Tesorería · USDC / Treasury · USDC, Tesorería · ARSa / Treasury · ARSa, Staking sync (cada 5 min · última: … · 10 procesados / every 5 min · last: … · 10 processed), Sincronizar / Sync now (NOT clicked). Localized numeric/date formats verified: ES uses es-AR ('100.025', '31,25', '6/8/26 10:42 p. m.'), EN uses en-US ('100,025', '31.25', '8/6/26 10:42 PM'). No console errors, no 500s. Module is fully accessible to the retail personal org and admin, and both languages are complete and consistent.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "StakingTabs.tsx is 681 lines — three sub-tabs (StakingsTab, WalletsTab, NewCashinTab) could be extracted into separate files for maintainability (non-blocking).",
+    "The KYB banner shown on /client/staking for maria.test+... ('VERIFICACIÓN DE ANTECEDENTES EN CURSO') remains in Spanish when locale=EN. This banner belongs to another shared component (not the staking namespace), so out of scope for this request, but worth i18n-ing globally to avoid mixed-language pages."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped per request)", "frontend": "100%"},
+  "test_credentials": "retail: maria.test+1780679716@individuo-prosper.io ; admin: admin@prosper.foundation (via /api/v1/auth/dev-login)",
+  "seed_data_creation": "None (no cash-in was submitted; only empty-form validation)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Staking module (client + admin) fully i18n'd and accessible for retail personal orgs. All ES/EN strings verified via data-testids. Locale switch is cookie-based (prosper_locale=en|es). CMS is production — do NOT submit real cash-ins; only test the empty-email validation for the toast."
+}

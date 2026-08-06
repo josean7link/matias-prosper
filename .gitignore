@@ -21,6 +21,8 @@ node_modules/
 
 # Next.js
 /.next/
+.next/
+frontend/.next/
 /out/
 next-env.d.ts
 *.tsbuildinfo
@@ -110,3 +112,4 @@ credentials.json
 .credentials
 frontend/.next/cache/webpack/client-production/0.pack
 codigo_limpio.zip
+prosper-project.zip

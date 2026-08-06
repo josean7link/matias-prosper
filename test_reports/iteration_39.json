@@ -1,0 +1,39 @@
+{
+  "summary": "Frontend-only validation of pagination + cash-in prefill UX in /admin/staking. Stakings pager and header widgets work perfectly. Wallets tab has a CRITICAL BUG: the 'Acciones' column header is present but the row body cells are missing — the 'Nueva solicitud' button per row is NOT rendered, so the entire prefill flow is broken.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "WalletsTab table row (page.tsx lines 429-458)",
+        "issue": "The <thead> declares 6 columns including 'Acciones' (line 426), but each <tbody> <tr> only renders 5 <td>: prosperId, email, cashin, address, integration. The <td> containing the 'Nueva solicitud' button with data-testid staking-wallet-cashin-btn-{i} is MISSING. Result: 0 cashin buttons in the DOM; prefill flow cannot be triggered from the UI.",
+        "selector": "[data-testid^=\"staking-wallet-cashin-btn-\"]",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Wallets CMS → Nueva solicitud prefill",
+        "issue": "Cannot be exercised because the button is not rendered on any row. Programmatic verification of onRequestCashin(email) → initialProsperId was blocked by the missing button.",
+        "affected_selectors": ["[data-testid^=\"staking-wallet-cashin-btn-\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/test_reports/staking_final.png"],
+  "action_items": [
+    "In frontend/src/app/admin/staking/page.tsx WalletsTab (around line 456-458), add a <td className=\"px-3 py-2 text-right\"> containing a button that calls onRequestCashin(r.email || r.prosperId || '') with data-testid={`staking-wallet-cashin-btn-${i}`}. Disable/hide when r.email is missing to avoid empty prefill.",
+    "After the fix, re-verify: (a) button visible on every row, (b) click → tab switches to 'Nueva solicitud' with staking-cashin-prosperid pre-filled with the row's email, (c) manual open of the tab (no row click) keeps input empty."
+  ],
+  "critical_code_review_comments": [
+    "WalletsTab: thead/tbody column count mismatch — header declares 'Acciones' but tbody omits the corresponding cell (page.tsx line 426 vs 430-457).",
+    "Pager component correctly hides itself when total <= PAGE_SIZE (verified with Stakings 13 rows → shows; Wallets <=10 rows → hides).",
+    "NewCashinTab key={cashinPrefill || 'manual'} correctly remounts on prefill change; verified manual reopen resets input to empty."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "60%"},
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Verified passing: (1) admin-staking-page loads, (2) Stakings pager works: '1–10 de 13' page1 with prev disabled, click Siguiente → '11–13 de 13' page2 with 3 rows, (3) filter reset to page 1 works (ARSa filter hides pager because <=10 results), (4) Wallets search filters (query 'qa-cuenta' → 1 row, pager hidden), (5) header widgets USDC + ARSa + Sync present, XLM absent, (6) manual open of 'Nueva solicitud' tab keeps input empty. FAILING: the per-row 'Nueva solicitud' button in Wallets CMS is not rendered because the <td> is missing in tbody, blocking the entire prefill flow. Main agent must add that <td> with the button and data-testid staking-wallet-cashin-btn-{i}.",
+  "rca of the issue": "In frontend/src/app/admin/staking/page.tsx WalletsTab, the <thead> was updated to add an 'Acciones' column (line 426) but the developer forgot to add the matching <td> with the 'Nueva solicitud' button inside the pageItems.map row template (should be after line 456, before </tr>). Because the button is what wires onRequestCashin → goToCashin → setCashinPrefill(email), no email prefill can occur from the UI. Fix: append a <td className=\"px-3 py-2 text-right\"><button data-testid={`staking-wallet-cashin-btn-${i}`} onClick={() => onRequestCashin(r.email || r.prosperId || '')} disabled={!r.email && !r.prosperId}>Nueva solicitud</button></td> before the closing </tr>."
+}

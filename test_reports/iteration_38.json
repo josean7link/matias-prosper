@@ -1,0 +1,18 @@
+{
+  "summary": "Validated the 2 tweaks to /admin/staking (P1-4): (a) XLM treasury widget removed — data-testid 'staking-treasury-xlm' no longer present; header now shows only USDC (31,25), ARSa (100.100 with clickable address GAG42M…FHAFK2) and Staking sync widget. (b) New 'Nueva cuenta CMS' box in the Wallets CMS tab (staking-create-account-box + email input + Crear cuenta button). Backend: 17/17 pytest passed including new POST /api/v1/admin/prosper/cms/users tests: 401/403 anon, 422 body sin email, 409 duplicado con qa-cuenta-nueva@prosper.foundation. Frontend UI: dev-login admin@prosper.foundation → /admin/staking loads OK; invalid-email 'noesemail' → client-side toast 'Ingresá un email válido' shown and input value preserved (no backend call); duplicate 'qa-cuenta-nueva@prosper.foundation' → sonner toast 'El usuario ya existe en el CMS' detected in 300ms; regression: Stakings + Nueva solicitud tabs still render, Sincronizar button ejecuta POST /staking-sync/run (toast 'Sincronización de stakings ejecutada' visible). NO new emails were created (main agent already created qa-cuenta-nueva as userId 20 — visible in wallets table with address '—' as expected).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_staking_module.py", "/app/test_reports/pytest/staking_module.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "phase22_admin_yield.py grew to ~772 lines with the new POST /cms/users route. Recommend extracting the CMS-passthrough block (treasury/stakings/staking-sync/cms wallets/cms users/cms cashin) to a dedicated router file before adding more endpoints.",
+    "POST /cms/users converts 'ya existe' substring match into 409 — brittle to CMS partner error message wording changes; ideally the adapter should expose a typed AlreadyExistsError so the route matches on a class, not free text."
+  ],
+  "updated_files": ["/app/backend/tests/test_staking_module.py"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% (all requested flows validated)"},
+  "test_credentials": "admin@prosper.foundation via GET /api/v1/auth/dev-login (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Did NOT create qa-cuenta-ui-test@prosper.foundation per instructions — main agent had already created qa-cuenta-nueva@prosper.foundation (userId 20, address null) which was reused as the duplicate-409 test target for both backend + frontend paths.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression stays green with 17 cases in test_staking_module.py including the new TestCmsCreateUser class (auth-gate / 422 body vacío / 409 duplicado). If a future change needs to create a fresh CMS account through the UI, remember the CMS is REAL mainnet in PROSPER_MODE=development — reuse qa-cuenta-nueva@prosper.foundation (already exists) to test the duplicate path; only use qa-cuenta-ui-test@prosper.foundation once for a fresh-creation smoke and never invent other emails."
+}

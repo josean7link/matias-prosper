@@ -221,6 +221,12 @@ async def _upsert_position(*, raw: dict, wallet_meta: dict) -> dict:
         set_doc["contract_email"] = raw["email"]
     if raw.get("hashDeposito") and raw["hashDeposito"] != "N/A":
         set_doc["deposit_hash"] = raw["hashDeposito"]
+    if raw.get("proyectado") is not None:
+        set_doc["projected_interest"] = _to_float(raw.get("proyectado"))
+    if raw.get("interesCada24Horas") is not None:
+        set_doc["daily_interest"] = _to_float(raw.get("interesCada24Horas"))
+    if raw.get("proximaFechaMonto") is not None:
+        set_doc["next_payout"] = raw["proximaFechaMonto"]
 
     if existing:
         await col(POSITIONS).update_one(

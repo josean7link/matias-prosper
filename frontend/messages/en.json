@@ -38,6 +38,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "invest": "Invest",
+    "staking": "Staking",
     "positions": "Positions",
     "load_money": "Add funds",
     "withdraw": "Withdraw",
@@ -61,6 +62,7 @@
     "admin_business": "Business",
     "admin_compliance": "Compliance",
     "admin_clients": "Clients",
+    "admin_staking": "Staking",
     "admin_ramp_accounts": "Ramp · accounts",
     "admin_ramp_movements": "Ramp · movements",
     "admin_ramp_intl": "Ramp · international",
@@ -691,5 +693,147 @@
     "new_movement_toast_usdc": "New movement · {amount} USDC",
     "deposit_in_transit_arsa_label": "ARSa deposit in transit",
     "deposit_in_transit_usdc_label": "USDC deposit in transit"
+  },
+  "staking": {
+    "copied": "{label} copied",
+    "wallet": "Wallet",
+    "tabs": {
+      "stakings": "Stakings",
+      "wallets": "CMS Wallets",
+      "cashin": "New request"
+    },
+    "pager": {
+      "info": "{from}–{to} of {total}",
+      "prev": "← Previous",
+      "next": "Next →"
+    },
+    "filters": {
+      "scope_all": "All",
+      "scope_ours": "Ours",
+      "scope_external": "External",
+      "asset_all": "Asset: all",
+      "status_all": "Status: all",
+      "status_active": "Active",
+      "status_matured": "Matured",
+      "status_redeemed": "Redeemed",
+      "refresh": "Refresh"
+    },
+    "list": {
+      "total": "{count} stakings",
+      "loading": "Loading…",
+      "error": "Error: {msg}",
+      "empty": "No stakings match the selected filters.",
+      "active_count": "{count, plural, one {# active} other {# active}}",
+      "external_note": "Stakings observed on-chain in wallets that are not ours. Historical residue / old Prosper tests (pre-ARSa integration). No action required."
+    },
+    "table": {
+      "client": "Client",
+      "asset": "Asset",
+      "modality": "Modality",
+      "principal": "Principal",
+      "rate": "Rate",
+      "status": "Status",
+      "maturity": "Maturity",
+      "wallet": "Wallet",
+      "hash": "Hash",
+      "origin": "Origin",
+      "external": "external",
+      "ours": "ours"
+    },
+    "detail": {
+      "start": "Start",
+      "maturity": "Maturity",
+      "accrued": "Accrued interest",
+      "accrued_na": "— (not published by contract)",
+      "claimed": "Claimed interest",
+      "projected": "Projected interest",
+      "daily": "Accrued per 24h",
+      "next_payout": "Next payout",
+      "redeemed": "Redeemed principal",
+      "memo": "Memo",
+      "org": "Org",
+      "org_external": "— (external)",
+      "position_id": "Position ID",
+      "created_updated": "Created / Updated",
+      "contract": "Soroban contract",
+      "deposit_hash": "Deposit hash"
+    },
+    "wallets": {
+      "new_account": "New CMS account",
+      "email_placeholder": "email@client.com",
+      "create_account": "Create account",
+      "create_hint": "Registers the user in the CMS; the wallet is assigned later via a cash-in request.",
+      "invalid_email": "Enter a valid email",
+      "account_created": "Account created in the CMS — userId {id}",
+      "account_failed": "Account creation failed",
+      "search_placeholder": "Search prosperId, email, address…",
+      "total": "{shown} of {total} wallets · mode {mode}",
+      "error": "Error reading /cms/users: {msg}",
+      "loading": "Loading CMS wallets…",
+      "empty": "No wallets registered in the CMS.",
+      "col_prosper_id": "prosperId",
+      "col_email": "Email",
+      "col_modality": "Modality",
+      "col_wallet": "Wallet",
+      "col_integration": "Integration",
+      "col_actions": "Actions",
+      "copy": "Copy",
+      "view_expert": "View on stellar.expert",
+      "new_request": "New request",
+      "new_request_title": "Create a cash-in request for this account"
+    },
+    "cashin": {
+      "intro": "Registers a cash-in request in the CMS: assigns a unique Stellar wallet to the client (by email) according to the settlement modality. The client then transfers USDC or ARSa to that wallet to start staking.",
+      "email_label": "Client email",
+      "email_placeholder": "pick a client or type an email",
+      "email_required": "Enter the client email",
+      "modality_label": "Settlement modality",
+      "mod_end_label": "end · At maturity",
+      "mod_end_desc": "Principal + earnings are reinvested; settlement at the end of the period (12 months).",
+      "mod_month_label": "month · Monthly",
+      "mod_month_desc": "Earnings settled monthly with a 24h pause to decide withdrawal or reinvestment.",
+      "submit": "Create cash-in request",
+      "success_reused": "Wallet already exists for that email + modality",
+      "success_created": "Cash-in request created — wallet assigned",
+      "failed": "Cash-in request failed",
+      "wallet_reused": "Existing wallet",
+      "wallet_assigned": "Wallet assigned",
+      "result_meta": "email {email} · modality {modality}",
+      "address_pending": "(pending — retry the wallets listing)",
+      "instructions": "Instruction for the client: transfer USDC or ARSa (Stellar network) to this wallet to start staking."
+    },
+    "treasury": {
+      "usdc": "Treasury · USDC",
+      "arsa": "Treasury · ARSa",
+      "address_label": "Treasury address",
+      "meta": "CMS {mode} · treasury refreshed {date}",
+      "cms_error": "CMS unavailable: {msg}"
+    },
+    "sync": {
+      "title": "Staking sync",
+      "every": "every {n} min",
+      "disabled": "disabled",
+      "last_run": "last: {date} · {processed} processed ({created} new, {updated} updated)",
+      "no_runs": "no runs recorded",
+      "last_failed": "The last run failed.",
+      "run": "Sync now",
+      "run_ok": "Staking sync executed",
+      "run_failed": "Sync failed"
+    },
+    "page": {
+      "admin_breadcrumb_home": "Admin",
+      "client_breadcrumb_home": "Home",
+      "breadcrumb": "Staking",
+      "admin_kicker": "CMS Protocol · Staking management",
+      "client_kicker": "CMS Protocol · Staking",
+      "title": "Staking",
+      "admin_subtitle": "Cash-in wallets, staking requests and Prosper protocol treasury (USDC / ARSa on Stellar).",
+      "client_subtitle": "Create cash-in requests, manage CMS accounts and track stakings (USDC / ARSa on Stellar)."
+    },
+    "status_values": {
+      "active": "active",
+      "matured": "matured",
+      "redeemed": "redeemed"
+    }
   }
 }

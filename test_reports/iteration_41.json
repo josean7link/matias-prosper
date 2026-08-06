@@ -1,0 +1,31 @@
+{
+  "summary": "Iteration 41: retest bugfix on /admin/staking → Nueva solicitud (cash-in). Verified label rename 'Email del cliente' (prosperId gone), email input type/placeholder, ARSa/USDC asset selector with both testids and no default selection, all three client-side validations, full idempotent submit (email+USDC+end → reused wallet GDE4FZ...ES6NR + USDC instructions), and prefill from Wallets CMS row with empty asset selector on remount. Backend: 8/8 tests pass covering new {email, modality, asset} shape, invalid asset (btc → 422), missing email (422), and legacy {prosper_id, modality} compat.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "verified_flows": [
+    "Cashin tab label = 'Email del cliente' (0 occurrences of 'prosperId' on page). Input type=email, placeholder='cliente@mail.com', data-testid=staking-cashin-prosperid preserved.",
+    "Asset selector renders staking-cashin-asset-arsa and staking-cashin-asset-usdc; neither has blue #2B6BFF border by default; after clicking USDC it gets highlighted.",
+    "Validation: submit empty → toast 'Ingresá el email del cliente'; text without '@' → same toast; valid email but no asset → toast 'Elegí la moneda del staking (ARSa o USDC)'. No backend call performed in these cases (result block never appeared).",
+    "Full idempotent submit with qa-staking-module@prosper.foundation + USDC + end → staking-cashin-result shows 'Wallet existente', address GDE4FZC7JP443JBYEB4MTTXOMZIFOA6W5E6LOL3Y6SYSW6LOLYAES6NR, line 'email qa-staking-module@prosper.foundation · moneda USDC · modalidad end', instructions 'transferir USDC (red Stellar)…'.",
+    "Prefill: Wallets CMS → search 'qa-staking-module' → row 'Nueva solicitud' → tab switches, email prefilled, asset selector empty (both buttons unstyled).",
+    "Backend (8/8 passed in TestCmsCashin): idempotent reused=True; {email,asset:usdc,modality:end}→200 with asset echoed; {email,asset:arsa}→200; asset='btc'→422; missing email & prosper_id→422; legacy {prosper_id, modality} still 200; invalid modality→422."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_staking_module.py",
+    "/app/test_reports/pytest/staking_cashin_iter41.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "frontend/src/app/admin/staking/page.tsx L487-494: asset state defaults to null and both validations fire before any network call. Correct.",
+    "frontend/src/app/admin/staking/page.tsx L500: POST body sends {email, modality, asset}. Backend L732-772 accepts either email or prosper_id; asset is validated by Pydantic pattern ^(arsa|usdc)$ and only stored in audit log + echoed in response — matches PRD (partner CMS has no currency field).",
+    "NewCashinTab uses `key={cashinPrefill || 'manual'}` on remount (page.tsx L669), so asset state resets when a Wallets row triggers prefill — verified in UI."
+  ],
+  "updated_files": ["/app/backend/tests/test_staking_module.py"],
+  "success_rate": {"backend": "100% (8/8 TestCmsCashin)", "frontend": "100%"},
+  "test_credentials": "Admin dev-login: admin@prosper.foundation. QA email for submits: qa-staking-module@prosper.foundation (idempotent).",
+  "seed_data_creation": "none — only idempotent reuse of existing wallet",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fix (asset selector + email-labelled field) fully verified end-to-end. Only ever submit with qa-staking-module@prosper.foundation to avoid creating real CMS mainnet wallets. Legacy body shape {prosper_id, modality} still supported by backend for backward compat.",
+  "rca of the issue": "Original bug: form asked for prosperId and had no moneda selector. Fix in frontend/src/app/admin/staking/page.tsx renames the field to 'Email del cliente' with type=email + '@' validation, and adds a required asset selector (ARSa/USDC) with client-side toast validation before submit. Backend routes/phase22_admin_yield.py accepts new body {email, modality, asset?} with asset validated by regex and stored in audit log; legacy {prosper_id, modality} still works. Verified via 8 backend pytest cases + full Playwright UI flow."
+}

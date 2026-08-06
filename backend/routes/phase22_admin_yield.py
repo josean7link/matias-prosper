@@ -20,6 +20,7 @@ from audit import log_action
 from auth import CurrentUser, get_current_user
 from db import (
     col, ALERTS, INVESTMENT_INTENTS, ORGANIZATIONS, POSITIONS, TRANSACTIONS,
+    USERS,
 )
 from roles import Role
 
@@ -496,7 +497,13 @@ async def list_cms_stakings(
       - status=active|matured|redeemed
     """
     _require_read(user)
+    return await stakings_payload(scope=scope, asset=asset, status=status)
 
+
+async def stakings_payload(*, scope: str = "all",
+                            asset: Optional[str] = None,
+                            status: Optional[str] = None) -> dict:
+    """Shared staking listing (used by admin + client portal routers)."""
     base: dict = {"wallet": {"$exists": True, "$ne": None},
                    "memo":   {"$exists": True, "$ne": None},
                    "is_deleted": {"$ne": True}}
@@ -669,4 +676,127 @@ async def reconcile_prosper_wallets(
             "ok":              result.get("ok"),
         })
     return result
+
+
+# ===========================================================================
+# CMS Staking module — wallets listing + cash-in creation (thin passthrough;
+# the Prosper CMS is the backend of record, formatting happens client-side)
+# ===========================================================================
+
+@router.get("/cms/wallets")
+async def list_cms_wallets(user: CurrentUser = Depends(get_current_user)):
+    """Raw list of CMS-registered users/wallets (`GET /cms/users`)."""
+    _require_read(user)
+    import os
+    from integrations.prosper import get_adapter, ProsperError
+    adapter = get_adapter()
+    fn = getattr(adapter, "list_cms_users", None)
+    if fn is None:
+        raise HTTPException(501, "adapter does not support list_cms_users")
+    try:
+        data = await fn()
+    except ProsperError as e:
+        raise HTTPException(502, f"CMS users read failed: {e}")
+    items = data.get("items", [])
+    return {"items":      items,
+             "raw":        data.get("raw"),
+             "total":      len(items),
+             "mode":       os.environ.get("PROSPER_MODE", "mock"),
+             "fetched_at": _iso()}
+
+
+async def emails_payload() -> dict:
+    """Portal client emails for the cash-in dropdown (shared helper)."""
+    rows = await col(USERS).find(
+        {"email": {"$exists": True, "$ne": None},
+         "role":  {"$regex": "^client"}},
+        {"_id": 0, "email": 1}).to_list(2000)
+    emails = sorted({str(r["email"]).strip().lower()
+                      for r in rows if r.get("email")})
+    return {"emails": emails, "total": len(emails)}
+
+
+@router.get("/emails")
+async def list_client_emails(user: CurrentUser = Depends(get_current_user)):
+    _require_read(user)
+    return await emails_payload()
+
+
+class CmsCreateUserBody(BaseModel):
+    email: str = Field(..., min_length=3, max_length=254)
+
+
+@router.post("/cms/users")
+async def create_cms_account(body: CmsCreateUserBody,
+                              user: CurrentUser = Depends(get_current_user)):
+    """Register a new CMS account by email (`POST /cliente/users`).
+
+    Creates the user row only — the wallet is assigned later via cash-in.
+    """
+    _require_write(user)
+    from integrations.prosper import get_adapter, ProsperError
+    email = body.email.strip().lower()
+    adapter = get_adapter()
+    fn = getattr(adapter, "create_cms_user", None)
+    if fn is None:
+        raise HTTPException(501, "adapter does not support create_cms_user")
+    try:
+        r = await fn(email=email)
+    except ProsperError as e:
+        if "ya existe" in str(e).lower():
+            raise HTTPException(409, "El usuario ya existe en el CMS")
+        raise HTTPException(502, f"CMS create user failed: {e}")
+    await log_action(
+        actor=user, action="admin.prosper.cms.user_created",
+        resource_type="prosper_cms_user", resource_id=email,
+        metadata={"user_id": r.get("user_id")})
+    return {"email": email, "user_id": r.get("user_id"), "raw": r.get("raw")}
+
+
+class CmsCashinBody(BaseModel):
+    email: str | None = Field(None, min_length=3, max_length=254)
+    prosper_id: str | None = Field(None, min_length=1, max_length=128)
+    modality: str = Field(..., pattern="^(end|month)$")
+    asset: str | None = Field(None, pattern="^(arsa|usdc)$")
+
+
+@router.post("/cms/cashin")
+async def create_cms_cashin(body: CmsCashinBody,
+                             user: CurrentUser = Depends(get_current_user)):
+    """Create (or return existing) CMS wallet for (clientEmail, modality).
+
+    Idempotent partner-side: same (email, cashin) returns the wallet
+    already provisioned. `asset` is NOT sent to the CMS (the partner API
+    has no currency field — the staked asset is defined by what gets
+    deposited); it is recorded locally for audit/instructions only.
+    """
+    _require_write(user)
+    from integrations.prosper import get_adapter, ProsperError
+    prosper_id = (body.email or body.prosper_id or "").strip()
+    if not prosper_id:
+        raise HTTPException(422, "email is required")
+    ptx = "adm_" + secrets.token_hex(8)
+    try:
+        w = await get_adapter().create_user_wallet(
+            user_reference_id=prosper_id,
+            prosper_tx_id=ptx,
+            modality=body.modality)
+    except ProsperError as e:
+        raise HTTPException(502, f"CMS cashin failed: {e}")
+    reused = bool((w.raw or {}).get("reused"))
+    await log_action(
+        actor=user, action="admin.prosper.cms.cashin",
+        resource_type="prosper_wallet", resource_id=prosper_id,
+        metadata={"modality": body.modality, "asset": body.asset,
+                   "address": w.address, "status": w.status,
+                   "reused": reused, "prosper_tx_id": ptx})
+    return {"prosper_id": prosper_id,
+             "email":      prosper_id,
+             "modality":   body.modality,
+             "asset":      body.asset,
+             "address":    w.address,
+             "status":     w.status,
+             "reused":     reused,
+             "tx_hash":    w.tx_hash,
+             "raw":        w.raw}
 

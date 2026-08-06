@@ -63,6 +63,16 @@ class MockProsperAdapter(ProsperAdapter):
         _TX_BY_PTX[prosper_tx_id] = payload
         return WalletResp(**payload)
 
+    async def list_cms_users(self) -> dict:
+        items = [{"prosperId": ref, "userId": ref, "email": None,
+                   "address": w["address"], "cashin": "end",
+                   "integration": "prosper"}
+                  for ref, w in _WALLETS.items()]
+        return {"items": items, "raw": items}
+
+    async def create_cms_user(self, *, email: str) -> dict:
+        return {"user_id": abs(hash(email)) % 100000, "raw": {"mock": True}}
+
     async def _ensure_wallet(self, user_ref: str) -> None:
         if user_ref not in _WALLETS:
             await self.create_user_wallet(

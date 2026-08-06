@@ -61,6 +61,7 @@ from routes.phase22_admin_yield import router as phase22_admin_yield_router
 from routes.ramp_public_webhook import router as ramp_public_webhook_router
 from routes.admin_ramp import router as admin_ramp_router
 from routes.client_invest import router as client_invest_router
+from routes.client_staking import router as client_staking_router
 from routes.client_kyc import router as client_kyc_router
 from routes.client_developer import router as client_developer_router
 from routes.client_profile import router as client_profile_router
@@ -609,6 +610,7 @@ api.include_router(alfred_mock_router, prefix="/v1")
 api.include_router(alfred_kyc_router, prefix="/v1")
 api.include_router(alfred_kyc_mock_router, prefix="/v1")
 api.include_router(client_invest_router, prefix="/v1")
+api.include_router(client_staking_router, prefix="/v1")
 api.include_router(client_developer_router, prefix="/v1")
 api.include_router(client_profile_router, prefix="/v1")
 api.include_router(admin_ops_router, prefix="/v1")
