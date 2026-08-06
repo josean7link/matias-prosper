@@ -1,6 +1,11 @@
 # render.yaml — Render Infrastructure-as-Code
 # Declara los servicios backend (FastAPI) + andes-gateway (Node). El frontend
 # va en Vercel (ver frontend/vercel.json).
+#
+# Los valores reales para cada `sync: false` de abajo están en la carpeta
+# hermana `env-vars/` (fuera de este repo, nunca se commitea) — ver
+# `env-vars/README.md` para el detalle de dónde pegar cada uno.
+#
 # Docs: https://render.com/docs/infrastructure-as-code
 
 services:
@@ -17,6 +22,7 @@ services:
     plan: starter
     healthCheckPath: /api/health
     envVars:
+      # ── Core / DB ──────────────────────────────────────────────────────
       - key: MONGO_URL
         sync: false          # Mismo Atlas que ya usa codigo_limpio — NO usar localhost
       - key: DB_NAME
@@ -25,6 +31,8 @@ services:
         sync: false          # Mismo Upstash que ya usa codigo_limpio
       - key: JWT_SECRET
         generateValue: true
+      - key: MFA_FERNET_KEY
+        sync: false
       - key: RESEND_API_KEY
         sync: false
       - key: RESEND_FROM
@@ -33,6 +41,92 @@ services:
         value: "true"
       - key: CORS_ORIGINS
         sync: false          # Se setea después de conocer la URL de Vercel
+      - key: PUBLIC_BASE_URL
+        sync: false          # URL pública de ESTE servicio en Render, se sabe recién después del primer deploy
+      - key: PROSPER_ENV
+        value: production    # Solo tag de observability (Sentry), no confundir con PROSPER_MODE
+      - key: PROSPER_DISABLE_RATELIMIT
+        value: "1"
+
+      # ── AiPrise (KYB/KYC de orgs business — individuos usan Andes) ─────
+      - key: AIPRISE_ENVIRONMENT
+        value: sandbox
+      - key: AIPRISE_API_KEY_SANDBOX
+        sync: false
+      - key: AIPRISE_API_KEY_PRODUCTION
+        sync: false
+      - key: AIPRISE_KYC_TEMPLATE_ID
+        value: ""
+      - key: AIPRISE_KYB_TEMPLATE_ID
+        value: ""
+      - key: AIPRISE_WEBHOOK_SECRET
+        sync: false
+      - key: AIPRISE_DEPRECATED
+        value: "1"
+
+      # ── Alfred (rampa/KYC — hoy en sandbox, fallback de Andes) ─────────
+      - key: ALFRED_MODE
+        value: sandbox
+      - key: ALFRED_API_KEY
+        sync: false
+      - key: ALFRED_API_SECRET
+        sync: false
+      - key: ALFRED_WEBHOOK_SECRET
+        sync: false
+      - key: ALFRED_BUSINESS_ID
+        value: "187"
+      - key: ALFRED_API_BASE_SANDBOX
+        value: https://penny-api-restricted-dev.alfredpay.io/api/v1/third-party-service/penny
+      - key: ALFRED_API_BASE_PRODUCTION
+        value: https://penny-api-restricted.alfredpay.io/api/v1/third-party-service/penny
+      - key: ALFRED_CALLBACK_URL
+        sync: false          # completar con la URL pública de este servicio + path del webhook
+      - key: ALFRED_KYC_MODE
+        value: sandbox
+      - key: ALFRED_KYC_BASE_SANDBOX
+        value: https://api-dev-services.alfredpay.app/api/v1
+      - key: ALFRED_KYC_BASE_PRODUCTION
+        value: https://api-services.alfredpay.app/api/v1
+
+      # ── Prosper CMS (minter Stellar) ────────────────────────────────────
+      - key: PROSPER_MODE
+        value: development   # "development"/"production" = llamadas reales a PROSPER_API_BASE; "mock" = simulado
+      - key: PROSPER_API_BASE
+        value: https://cmsback.protocol-prosper.io
+      - key: PROSPER_API_USER
+        sync: false
+      - key: PROSPER_API_PASS
+        sync: false
+      - key: PROSPER_ASSET_CODE
+        value: USDCP
+      - key: PROSPER_ISSUER_PUBLIC_KEY
+        value: GDGHSEYRDQ3KCWEKSSWTIB4CHPXAXDQGEEO3LNVKNUVTUMRCNAWAE3N5
+      - key: PROSPER_DISTRIBUTION_PUBLIC_KEY
+        value: CD2NVPKBQK3J42JABNAN3WRQITQMBH4TH2MNIEVAIMJEQ2HRJBVMVVWY
+      - key: PROSPER_DEPOSIT_ADDRESS
+        value: GCCHGZRZ4QTI4WRWRKHXAUD7SKCSUHRXOXG66EZLAW4FSMRPDHRLNE77
+      - key: PROSPER_DEPOSIT_MODE
+        value: mock
+      - key: PROSPER_TREASURY_ADDRESS
+        value: GAG42MXCJCL4PQTDUFGXD26OAABXVW7NNWJCHU3B66ADMNQ2EJFHAFK2
+
+      # ── ARSa / USDC (direcciones públicas Stellar, no son secretas) ────
+      - key: ARSA_ISSUER
+        value: GCVIA2UOUEM6JATLDQVXERXPSELWBRCDHB53SOAYBGUOHNOSUII4T5NE
+      - key: ARSA_CODE
+        value: ARSa
+      - key: ARSA_SAC
+        value: CDYP52X4FIXSPDK76JGJT6J3NH2EV2GMBJ2KCEKMYMR36OSB3Y4CHFPL
+      - key: USDC_STELLAR_ISSUER
+        value: GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
+      - key: INVEST_MIN_USDC
+        value: "10"
+      - key: CONVERSION_QUOTE_TTL_SECONDS
+        value: "60"
+      - key: ARSA_NATIVE_YIELD_ENABLED
+        value: "false"
+
+      # ── Phase 13 — Ramp provider abstraction (Andes) ────────────────────
       - key: RAMP_PROVIDER
         value: andeslabs
       - key: RAMP_PROVIDER_MODE
@@ -41,11 +135,10 @@ services:
         sync: false          # URL pública del servicio prosper-andes-gateway (ver abajo), una vez desplegado
       - key: GATEWAY_INTERNAL_TOKEN
         sync: false          # Debe ser IDÉNTICO al que se setea en prosper-andes-gateway
-      - key: PROSPER_ENV
-        value: production
-      # Phase 02 — Deposit Detection Engine: apagado en este deploy (ver
-      # ANALISIS_PROSPER_PROJECT.md / DEPLOY_ADAPTATION.md — falta wiring
-      # del scheduler en server.py, no lo prendemos a ciegas en prod).
+
+      # ── Phase 02 — Deposit Detection Engine: apagado en este deploy ────
+      # (ver ANALISIS_PROSPER_PROJECT.md / DEPLOY_ADAPTATION.md — falta
+      # wiring del scheduler en server.py, no lo prendemos a ciegas)
       - key: DEPOSIT_ENGINE_ENABLED
         value: "false"
       - key: HORIZON_MODE
