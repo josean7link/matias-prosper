@@ -5,6 +5,7 @@ Mounted under /api/v1.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -61,14 +62,14 @@ DEFAULT_PRODUCTS = [
      "arsa_native_enabled": False,
      "description": "USDC · pago mensual de intereses (12 meses)."},
     {"product_id": "arsa_end",   "name": "Prosper ARSa · End",
-     "term_days": 365, "apr_bps": 1700, "min_amount": 100_000, "max_amount": 5_000_000_000,
+     "term_days": 365, "apr_bps": 1700, "min_amount": 10, "max_amount": 5_000_000_000,
      "status": "active", "asset": "arsa", "yield_asset": "arsa",
      "payout_asset": "arsa", "payout_schedule": "at_maturity",
      "modality": "end", "term_months": 12,
      "arsa_native_enabled": True,
      "description": "ARSa · cobro al vencimiento (12 meses)."},
     {"product_id": "arsa_month", "name": "Prosper ARSa · Mensual",
-     "term_days": 365, "apr_bps": 1700, "min_amount": 100_000, "max_amount": 5_000_000_000,
+     "term_days": 365, "apr_bps": 1700, "min_amount": 10, "max_amount": 5_000_000_000,
      "status": "active", "asset": "arsa", "yield_asset": "arsa",
      "payout_asset": "arsa", "payout_schedule": "monthly",
      "modality": "month", "term_months": 12,
@@ -327,6 +328,39 @@ def _empty_aum_bucket() -> dict:
              "positions": 0, "active": 0}
 
 
+async def _read_stellar_balance(*, org_id: str, asset_code: str,
+                                 asset_issuer: str) -> float:
+    """Live read of the org's Stellar wallet balance for (code, issuer).
+
+    Returns 0.0 if there's no provisioned wallet or Horizon is
+    unreachable. Never raises — callers use this in the hot path.
+    """
+    if not asset_issuer:
+        return 0.0
+    from db import RAMP_WALLETS
+    # Match the asset lane the wallet was provisioned under (case-insensitive
+    # code — DB stores "arsa"/"usdc" lower-case).
+    wallet = await col(RAMP_WALLETS).find_one(
+        {"org_id": org_id, "asset": asset_code.lower(),
+         "is_deleted": {"$ne": True}},
+        {"_id": 0, "address": 1},
+        sort=[("created_at", -1)])
+    address = (wallet or {}).get("address")
+    if not address:
+        return 0.0
+    from integrations.horizon import get_adapter
+    balances = await get_adapter().get_account_balances(address=address)
+    for b in balances:
+        if (b.asset_code == asset_code
+                and b.asset_issuer == asset_issuer):
+            try:
+                return float(b.balance)
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+
+
+
 @router.get("/dashboard-summary")
 async def dashboard_summary(user: CurrentUser = Depends(get_current_user)):
     """Aggregates everything the client dashboard needs in a single call.
@@ -377,6 +411,18 @@ async def dashboard_summary(user: CurrentUser = Depends(get_current_user)):
     #                        (legacy fiat-onramp surplus, retire-able).
     #    * usdc_stellar  → USDC at the org's Stellar deposit wallet,
     #                        ready to transfer to USDCp.
+    #
+    # Freshness: before reading `ramp_balances`, ask the provider for
+    # the current numbers so a CVU deposit that just landed shows up
+    # immediately (webhook or not). Best-effort — never blocks the
+    # dashboard if the provider is slow/down.
+    try:
+        from services.ramp_balance_sync import refresh_ramp_balances_for_org
+        await refresh_ramp_balances_for_org(org_id)
+    except Exception as e:                                    # noqa: BLE001
+        logger.warning("dashboard_summary balance refresh failed "
+                          "org=%s: %s", org_id, e)
+
     available_usdc = await _balance_for(user)
     arsa_row = await col(RAMP_BALANCES).find_one(
         {"org_id": org_id, "asset": "arsa"},
@@ -395,10 +441,19 @@ async def dashboard_summary(user: CurrentUser = Depends(get_current_user)):
                 sort=[("as_of", -1)])
     arsa_cvu = float(arsa_row.get("balance") or 0) if arsa_row else 0.0
 
-    # Read Stellar wallet balances by asset via the Prosper adapter
-    # (best-effort — the adapter swallows failures and returns "0").
+    # `arsa_stellar` — live read of the org's Stellar wallet balance via
+    # Horizon (`GET /accounts/{address}`). This is the second source of
+    # truth: even if the provider-side ramp_balances is stale, the
+    # on-chain read reflects reality. Best-effort — falls back to 0 if
+    # Horizon is unreachable (mock adapter, network blocked, etc.).
     arsa_stellar = 0.0
     usdc_stellar = 0.0
+    try:
+        arsa_stellar = await _read_stellar_balance(
+            org_id=org_id, asset_code="ARSa",
+            asset_issuer=os.environ.get("ARSA_ISSUER", ""))
+    except Exception as e:                                    # noqa: BLE001
+        logger.warning("arsa_stellar read failed org=%s: %s", org_id, e)
     try:
         bal = await prosper_adapter().get_user_balances(org_id)
         # The adapter's `balance_prosper` is asset-agnostic — it returns the
@@ -604,6 +659,7 @@ async def _execute_buy(*, user, org, product: dict, amount: float,
         "position_id":      pos_id,
         "org_id":           user.org_id,
         "user_id":          user.user_id,
+        "contract_email":   (user.email or "").lower(),
         "product_id":       product["product_id"],
         # New P0 fields ------------------------------------------------------
         "asset":            asset,                   # "arsa" | "usdc"
@@ -793,17 +849,44 @@ async def invest_onchain(body: InvestOnchainIn,
             f"Máximo: {product['max_amount']} ARSa")
 
     # ---- 4. Resolve destination wallet (per-org, per-modality) -------------
-    from routes.onramp_flow import ensure_org_prosper_wallet
+    from routes.onramp_flow import (ensure_org_prosper_wallet,
+                                       _is_valid_stellar_address)
     try:
         wallet_meta = await ensure_org_prosper_wallet(user.org_id,
                                                           modality=modality)
     except Exception as e:  # noqa: BLE001
+        # The most common failure here is the Prosper CMS returning 400
+        # on `/cms/cashin` ("Error creating account on Stellar network"
+        # — the partner's Stellar funding side is down). Log the raw
+        # error for ops and surface a user-friendly Spanish message.
+        err_text = str(e)
+        logger.warning("invest_onchain: ensure_org_prosper_wallet "
+                          "failed org=%s modality=%s: %s",
+                          user.org_id, modality, err_text)
+        if ("Error creating account on Stellar network" in err_text
+                or "cms/cashin" in err_text
+                or "wallet inválida" in err_text):
+            raise HTTPException(503,
+                "El CMS de Prosper no pudo generar la wallet destino "
+                "en este momento. Ya estamos al tanto; reintentá en "
+                "unos minutos.")
         raise HTTPException(502,
-            f"No se pudo resolver la wallet destino: {e}")
+            f"No se pudo resolver la wallet destino: {err_text}")
     destination_address = (wallet_meta.get("stellar_address") or "").strip()
     if not destination_address:
         raise HTTPException(502,
             "La wallet de Prosper para esta modalidad aún no está provisionada.")
+    if not _is_valid_stellar_address(destination_address):
+        # Belt-and-suspenders: even if a legacy row slipped past the
+        # provisioning guard, refuse to hand a bogus address to Andes
+        # (it would 400 "Invalid address" and surface as a blank 502
+        # toast to the user). Force the caller to retry.
+        logger.error("invest_onchain: wallet destino inválida "
+                        "org=%s modality=%s addr=%r — bloqueando envío",
+                        user.org_id, modality, destination_address)
+        raise HTTPException(503,
+            "La wallet destino de Prosper no es válida. "
+            "Reintentá en unos minutos.")
     if body.confirmed_destination.strip() != destination_address:
         raise HTTPException(400,
             "La dirección destino confirmada no coincide con la wallet asignada. "
@@ -903,6 +986,7 @@ async def invest_onchain(body: InvestOnchainIn,
         "position_id":      pos_id,
         "org_id":           user.org_id,
         "user_id":          user.user_id,
+        "contract_email":   (user.email or "").lower(),
         "product_id":       product["product_id"],
         "asset":            "arsa",
         "modality":         modality,

@@ -281,6 +281,9 @@
     "deposit_usdc_first": "Go deposit USDC first",
     "footnote_arsa": "The staking is created automatically once the on-chain transfer is confirmed (1-3 min).",
     "footnote_usdc": "The staking is created once we receive your on-chain transfer. This is a yield preview.",
+    "post_success_title": "Transfer initiated",
+    "post_success_description": "We're detecting the on-chain deposit. Your active staking will appear in the Staking section within 1-3 minutes.",
+    "post_success_cta": "Go to Staking",
     "modality_end_label": "At maturity",
     "modality_month_label": "Monthly",
     "modality_end_title": "At maturity",
@@ -799,6 +802,8 @@
     "treasury": {
       "usdc": "Treasury · USDC",
       "arsa": "Treasury · ARSa",
+      "xlm": "Treasury · XLM",
+      "xlm_note": "Stellar network fuel",
       "address_label": "Treasury address",
       "meta": "CMS {mode} · treasury refreshed {date}",
       "cms_error": "CMS unavailable: {msg}"

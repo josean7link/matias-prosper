@@ -22,6 +22,7 @@ interface Treasury {
   address: string | null;
   balanceUSDC: string | number | null;
   balanceARSA: string | number | null;
+  balanceXLM: string | number | null;
   mode: string;
   refreshed_at: string;
 }
@@ -54,7 +55,7 @@ function TreasuryAndSync() {
 
   const cell = "rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-4";
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6" data-testid="staking-cms-widgets">
+    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6" data-testid="staking-cms-widgets">
       <div className={cell} data-testid="staking-treasury-usdc">
         <p className="text-[10px] uppercase tracking-wider text-[rgb(var(--fg-muted))]">{t("treasury.usdc")}</p>
         <p className="text-2xl font-mono mt-1">
@@ -73,6 +74,13 @@ function TreasuryAndSync() {
             {short(tr.address)} <Copy className="inline" size={10} />
           </button>
         )}
+      </div>
+      <div className={cell} data-testid="staking-treasury-xlm">
+        <p className="text-[10px] uppercase tracking-wider text-[rgb(var(--fg-muted))]">{t("treasury.xlm")}</p>
+        <p className="text-2xl font-mono mt-1">
+          {tErr ? "—" : tLoading ? "…" : fmtAmount(tr?.balanceXLM, "usdc", loc)}
+        </p>
+        <p className="text-[11px] text-[rgb(var(--fg-muted))] mt-0.5">{t("treasury.xlm_note")}</p>
       </div>
       <div className={cell} data-testid="staking-sync-widget">
         <div className="flex items-start justify-between">

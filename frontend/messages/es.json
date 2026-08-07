@@ -281,6 +281,9 @@
     "deposit_usdc_first": "Ir a cargar USDC primero",
     "footnote_arsa": "El staking se crea automáticamente al confirmarse la transferencia on-chain (1-3 min).",
     "footnote_usdc": "El staking se crea cuando recibimos tu transferencia on-chain. Esto es un preview del rendimiento.",
+    "post_success_title": "Transferencia iniciada",
+    "post_success_description": "Estamos detectando el depósito on-chain. En 1-3 minutos vas a ver tu staking activo en la sección Staking.",
+    "post_success_cta": "Ir a Staking",
     "modality_end_label": "Al vencimiento",
     "modality_month_label": "Mensual",
     "modality_end_title": "Al vencimiento",
@@ -799,6 +802,8 @@
     "treasury": {
       "usdc": "Tesorería · USDC",
       "arsa": "Tesorería · ARSa",
+      "xlm": "Tesorería · XLM",
+      "xlm_note": "Combustible de red Stellar",
       "address_label": "Address de tesorería",
       "meta": "CMS {mode} · tesorería actualizada {date}",
       "cms_error": "CMS no disponible: {msg}"

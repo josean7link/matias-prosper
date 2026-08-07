@@ -731,6 +731,7 @@ async def get_balances(end_customer_id: str,
             {"ramp_account_id": doc["id"],
               "asset": code, "chain": items[-1].chain},
             {"$set": {
+                "org_id": org_id,
                 "ramp_account_id": doc["id"], "asset": code,
                 "chain": items[-1].chain, "balance": str(b.balance),
                 "as_of": now}},
@@ -1188,6 +1189,17 @@ async def _sync_andes_movements_to_cache(
             upsert=True)
         if result.upserted_id is not None:
             persisted += 1
+    # A movement sync without a matching balance refresh leaves the
+    # dashboard-summary lane at 0 even though funds are in the ramp
+    # account. Trigger a best-effort refresh so `ramp_balances` reflects
+    # what Andes reports right after we noticed the movement. Never
+    # blocks or raises — the movements themselves are already persisted.
+    try:
+        from services.ramp_balance_sync import refresh_ramp_balances_for_org
+        await refresh_ramp_balances_for_org(org_id)
+    except Exception as e:                                    # noqa: BLE001
+        logger.warning("post-sync balance refresh failed org=%s: %s",
+                          org_id, e)
     return persisted
 
 

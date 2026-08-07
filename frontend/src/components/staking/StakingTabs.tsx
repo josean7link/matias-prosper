@@ -356,8 +356,9 @@ function StakingsTab({ base }: { base: string }) {
 
 // ---------------------------------------------------------------- wallets
 
-function WalletsTab({ base, onRequestCashin }:
-  { base: string; onRequestCashin: (email: string) => void }) {
+function WalletsTab({ base, onRequestCashin, allowManualCashin }:
+  { base: string; onRequestCashin: (email: string) => void;
+    allowManualCashin: boolean }) {
   const t = useTranslations("staking");
   const { data, error, isLoading, mutate } =
     useSWR<CmsWalletsResp>(`${base}/cms/wallets`, fetcher);
@@ -423,7 +424,9 @@ function WalletsTab({ base, onRequestCashin }:
                 <th className="px-3 py-2">{t("wallets.col_modality")}</th>
                 <th className="px-3 py-2">{t("wallets.col_wallet")}</th>
                 <th className="px-3 py-2">{t("wallets.col_integration")}</th>
-                <th className="px-3 py-2 text-right">{t("wallets.col_actions")}</th>
+                {allowManualCashin && (
+                  <th className="px-3 py-2 text-right">{t("wallets.col_actions")}</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -454,16 +457,18 @@ function WalletsTab({ base, onRequestCashin }:
                     ) : "—"}
                   </td>
                   <td className="px-3 py-2 text-xs text-[rgb(var(--fg-muted))]">{r.integration || "—"}</td>
-                  <td className="px-3 py-2 text-right">
-                    <button
-                      onClick={() => onRequestCashin(String(r.email || r.prosperId || r.userId || ""))}
-                      disabled={!(r.email || r.prosperId || r.userId)}
-                      className="inline-flex items-center gap-1 rounded-md border border-[rgb(var(--border))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--surface-hover))] disabled:opacity-40"
-                      title={t("wallets.new_request_title")}
-                      data-testid={`staking-wallet-cashin-btn-${i}`}>
-                      <Plus size={11} /> {t("wallets.new_request")}
-                    </button>
-                  </td>
+                  {allowManualCashin && (
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        onClick={() => onRequestCashin(String(r.email || r.prosperId || r.userId || ""))}
+                        disabled={!(r.email || r.prosperId || r.userId)}
+                        className="inline-flex items-center gap-1 rounded-md border border-[rgb(var(--border))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--surface-hover))] disabled:opacity-40"
+                        title={t("wallets.new_request_title")}
+                        data-testid={`staking-wallet-cashin-btn-${i}`}>
+                        <Plus size={11} /> {t("wallets.new_request")}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -603,7 +608,8 @@ function NewCashinTab({ base, onCreated, initialProsperId }:
 
 type Tab = "stakings" | "wallets" | "cashin";
 
-export const StakingTabs = ({ base }: { base: string }) => {
+export const StakingTabs = ({ base, allowManualCashin = true }:
+  { base: string; allowManualCashin?: boolean }) => {
   const t = useTranslations("staking.tabs");
   const [tab, setTab] = useState<Tab>("stakings");
   const [walletsVersion, setWalletsVersion] = useState(0);
@@ -630,12 +636,17 @@ export const StakingTabs = ({ base }: { base: string }) => {
       <div className="flex items-center gap-1.5 mb-4 border-b border-[rgb(var(--border))] pb-2">
         {tabBtn("stakings", t("stakings"), "staking-tab-btn-stakings")}
         {tabBtn("wallets", t("wallets"), "staking-tab-btn-wallets")}
-        {tabBtn("cashin", t("cashin"), "staking-tab-btn-cashin")}
+        {allowManualCashin &&
+          tabBtn("cashin", t("cashin"), "staking-tab-btn-cashin")}
       </div>
 
       {tab === "stakings" && <StakingsTab base={base} />}
-      {tab === "wallets" && <WalletsTab key={walletsVersion} base={base} onRequestCashin={goToCashin} />}
-      {tab === "cashin" && (
+      {tab === "wallets" && (
+        <WalletsTab key={walletsVersion} base={base}
+                     onRequestCashin={goToCashin}
+                     allowManualCashin={allowManualCashin} />
+      )}
+      {tab === "cashin" && allowManualCashin && (
         <NewCashinTab key={cashinPrefill || "manual"}
                       base={base}
                       initialProsperId={cashinPrefill}

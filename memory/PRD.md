@@ -2456,3 +2456,232 @@ trackeado). `gc.auto=0` ya seteado. Si mongo cae en FATAL: borrar
   (hot-reload race). SIEMPRE verificar con grep tras editar server.py/real.py.
 - Verificado E2E simulando el entorno del tester (RESEND_API_KEY con key inválida):
   dev-login 303 ✓, dev_otp presente ✓, banner + código prellenado ✓, Verify → /client ✓.
+
+## ⚠️ PENDIENTE FUTURO — Quitar DEMO_MODE antes de producción real
+- **Tarea (pedido explícito del usuario, Jun 2026)**: más adelante hay que SACAR
+  el modo demo. Hoy `DEMO_MODE` defaultea a `true` en `backend/server.py` (~línea 87)
+  porque el entorno actual se usa para demos y no se pueden cambiar env vars.
+- **Qué implica sacarlo cuando llegue el momento**:
+  1. Cambiar el default a `false` (o eliminar el flag y volver al gate por
+     RESEND_API_KEY) en `backend/server.py`: afecta `dev-login` (magic links de
+     /access) y el `dev_otp` en la respuesta de `passwordless-login`.
+  2. Configurar Resend real (dominio verificado + `RESEND_FROM` propio) para que
+     el login por email funcione sin código en pantalla.
+  3. Revisar/quitar la página `/access` (cuentas demo) o gatearla igual.
+  4. Actualizar banner del OTP y footer de /access que mencionan el modo demo.
+- **Riesgo si se olvida**: cualquiera podría loguearse como cualquier usuario vía
+  dev-login en producción. NO pasar a producción real con DEMO_MODE activo.
+
+## 2026-08 — Fix P0: ARSa balance no se reflejaba tras depósito CVU
+### Problema
+Un depósito real de 15 ARSa al CVU de Matías Plano quedó registrado como
+`ramp_movement` (`source: andes_sync`, `status: Success`) pero:
+- `ramp_balances` estaba VACÍO para su org → `dashboard-summary` mostraba
+  `cash.arsa = 0` → el botón "Invertir" no se habilitaba.
+- Consecuencia: pipeline roto entre "plata en CVU" y "poder generar staking".
+
+### Root cause (2 bugs)
+1. `_sync_andes_movements_to_cache` (ramp_routes.py) upserteaba movements
+   pero NO refrescaba `ramp_balances`.
+2. El único path que sí actualizaba `ramp_balances`
+   (`GET /ramp/accounts/{end_customer_id}/balances`) no seteaba `org_id`
+   en el documento → la primary query de `dashboard-summary`
+   (`{org_id, asset:"arsa"}`) fallaba y caía a un fallback que también
+   estaba vacío por el bug #1.
+3. `arsa_stellar` en `dashboard-summary` se leía del adapter Prosper que
+   solo devuelve USDC, no ARSa on-chain → segunda fuente de verdad
+   inexistente.
+
+### Fix aplicado (Opciones A + B)
+- **Nuevo helper** `services/ramp_balance_sync.py::refresh_ramp_balances_for_org`
+  centraliza el pull-desde-provider + upsert idempotente con `org_id` incluido.
+- **A**: llamado desde:
+  - `_sync_andes_movements_to_cache` (ramp_routes.py) tras upsertar movements.
+  - `dashboard_summary` (client_invest.py) antes de leer.
+- **B**: `HorizonAdapter` ahora expone `get_account_balances(address)`.
+  `dashboard_summary` lo usa para poblar `cash.arsa_stellar` con la
+  lectura on-chain real (best-effort — degrada a 0 si el modo es mock o
+  Horizon está inalcanzable). Env var: `ARSA_ISSUER`.
+- **Corrección secundaria**: `/ramp/accounts/{ec}/balances` ahora incluye
+  `org_id` en el upsert (bug #2).
+
+### Tests
+- `tests/test_ramp_balance_sync.py` (4/4 pass):
+  - Upsert incluye `org_id`.
+  - Skip cuando no hay ramp_account.
+  - `_read_stellar_balance` lee del mock Horizon inyectado.
+  - Devuelve 0 si no hay wallet provisionada.
+- Regresión: `test_horizon_adapter.py` + `test_deposit_engine.py` (37/37 pass).
+
+### Verificación E2E (Matías Plano)
+Antes del fix: `cash.arsa = 0` (bloqueado, no puede invertir).
+Después del fix: `cash.arsa = 15.0` (`arsa_cvu = 15`) → UI habilita "Invertir".
+
+### Pendiente relacionado (backlog)
+- Cuando `HORIZON_MODE=real` en producción, `arsa_stellar` se poblará
+  con la lectura on-chain automáticamente. Validar en el entorno destino.
+- Extender el mismo patrón para USDC: hoy `usdc_stellar` sigue leyéndose
+  del adapter Prosper (mismo pattern legacy), reemplazable por
+  `_read_stellar_balance(..., asset_code="USDC")` cuando se decida.
+
+## 2026-08 — Fix: 502 en invest/onchain + wallets mock inválidas + prosperId por email
+### Problema
+Al confirmar la transferencia de 10 ARSa a "Prosper Treasury", el toast quedaba
+en blanco y el backend devolvía 502 tras ~31s. Andes rechazaba la transferencia
+con `{"error":"Invalid address"}`.
+
+### Diagnóstico
+Diagnóstico contra el CMS real (`cmsback.protocol-prosper.io`):
+1. Login CMS 201 OK, `list_cms_users` 200 OK.
+2. `POST /cms/cashin` con `prosperId` YA registrado → 201 OK + wallet válida.
+3. `POST /cms/cashin` con `prosperId` NUEVO (email o org_id o test) → **400**
+   `{"error":"Error creating account on Stellar network"}`.
+   → **Es un problema del CMS de Prosper** (probable: cuenta funder sin XLM
+   para pagar el CreateAccount de nuevas cuentas Stellar en mainnet).
+4. Nuestro código caía a un fallback mock que fabricaba una address con
+   caracteres hex fuera del alfabeto base32 Stellar (`G98A270AD9B99C…`).
+5. Frontend pasaba esa address a Andes → Andes 400 → nuestro 502.
+
+### Cambios aplicados
+- **`routes/onramp_flow.py::ensure_org_prosper_wallet`**:
+  - `prosperId` ahora se toma del email del `client_admin` (alineado con
+    protocolo §6.1 y con la instrucción explícita del usuario). Fallback
+    a `org_id` si el org no tiene admin todavía. Rows preexistentes siguen
+    resolviendo por `organizations.prosper_id` intacto.
+  - Fallback a mock **solo** cuando `PROSPER_MODE=mock`. Con
+    `PROSPER_MODE=development|production`, el error del CMS se propaga.
+  - Guard: si la address que devuelve el partner no es Stellar válida
+    (`_is_valid_stellar_address` — 56 chars, base32 estricto), NO se
+    persiste y se levanta `RuntimeError` legible.
+- **`routes/client_invest.py::invest_onchain`**:
+  - Valida formato Stellar del destino antes de llamar a Andes (403/503).
+  - Mensaje user-friendly cuando el error viene del CMS (503):
+    "El CMS de Prosper no pudo generar la wallet destino en este momento.
+     Ya estamos al tanto; reintentá en unos minutos."
+- **Purga Mongo**: `db.organizations.updateMany` con
+  `$pull: {prosper_wallets: {address: {$not: /^G[A-Z2-7]{55}$/}}}`
+  → 13 rows de 10 orgs afectadas (incluida Matías). Ahora esas orgs
+  re-provisionan wallet limpia en cuanto el CMS vuelva.
+
+### Estado
+- ✅ Ya no hay wallets mock inválidas en la base.
+- ✅ Ya no se pueden persistir wallets con formato Stellar inválido.
+- ✅ El error del CMS es visible al usuario (503) y en logs (WARN).
+- ❌ **Bloqueante externo**: el CMS de Prosper sigue devolviendo 400
+  para cashin de prosperIds nuevos. Ninguna operación de alta puede
+  completarse hasta que Prosper arregle su lado.
+
+### Mensaje para Prosper CMS (bug del lado de ellos)
+> `POST /api/v1/cms/cashin` devuelve 400 con `"Error creating account
+> on Stellar network"` para cualquier `prosperId` nuevo. Los prosperIds
+> ya registrados retornan 201 con la wallet correcta. La cuenta funder
+> del CMS probablemente no tiene XLM suficiente para pagar el
+> `CreateAccount` en Stellar mainnet — verificar balance XLM y/o
+> permisos de signer de la cuenta master.
+
+## 2026-08 — Staking Portal: scope por email + tab creación gateado por rol + XLM treasury
+### Cambios de comportamiento
+**Cliente (`client_admin` / `client_user`)**:
+- `/client/staking` ahora muestra SOLO stakings/wallets asociados al email
+  del usuario logueado (match case-insensitive contra `contract_email`).
+- Se removió el tab **New request** (creación manual de cashin en CMS).
+  El único camino para obtener wallet en CMS es a través de `/client/invest`,
+  que la provisiona lazy con el email del `client_admin` como `prosperId`.
+- Endpoints removidos del router del cliente:
+  `POST /client/staking/cms/users`, `POST /client/staking/cms/cashin`.
+- Postproceso invest: toast con título/desc explicativa y botón
+  "Ir a Staking" que lleva a `/client/staking` (i18n ES/EN).
+
+**Admin / Finance / Ops / Compliance (`internal_roles`)**:
+- Siguen viendo TODO (stakings, wallets, saldos) sin filtro.
+- Widget **Treasury · XLM** re-agregado en `/admin/staking` con nota
+  "Combustible de red Stellar" (i18n ES/EN).
+- Tab "New request" sigue disponible para provisión manual desde admin.
+
+### Detalle técnico
+- `phase22_admin_yield.stakings_payload(email=…)` — filtro opcional por
+  `contract_email` (case-insensitive). Rows sin email nunca matchean.
+- `routes/client_staking.py` reescrito: usa `is_internal(role)` para
+  decidir si aplica filtro por email o pasa `None` (bypass).
+- `StakingTabs.tsx` acepta `allowManualCashin?: boolean` (default `true`).
+  El client staking page pasa `false`, admin usa el default.
+- `admin/staking/page.tsx`: grid pasado de 3 a 4 columnas para el
+  nuevo widget XLM; interface `Treasury` extendida con `balanceXLM`
+  (el backend `/admin/prosper/treasury` ya lo devolvía).
+
+### Verificado end-to-end
+- Matías (`client_admin`) → tabs presentes: `stakings, wallets`;
+  `cashin_tab: False`. Endpoint `POST /cms/cashin` → 404.
+- Admin (`super_admin`) → tabs completos + widgets `usdc, arsa, xlm`
+  todos presentes. 14 stakings visibles (3 ours + 11 external).
+- Tests: 4/4 nuevos (`test_ramp_balance_sync`) + 36 regresión pasan.
+  Los 2 fallos en `test_p12_multi_asset_dashboard::test_cash_buckets`
+  y `test_p13_cms_admin::test_stakings_all` son **pre-existentes**
+  (hardcoded values sobre datos que evolucionaron) — verificado con
+  git-stash del branch.
+
+## 2026-08 — E2E ARSa Monthly funcionando: 5 ARSa · Matías Plano
+### Resultado
+**PIPELINE COMPLETO OK** — CMS destrabó, cash-in usa email como prosperId,
+transferencia on-chain confirmada, staking activo visible en /client/staking.
+
+### Pipeline verificado (paso a paso)
+1. **Wallet CMS provisionada** — `prosperId = matiasplano@gmail.com`
+   (usando email tal como pidió el usuario). CMS ahora responde 201
+   con wallet Stellar válida:
+   - `monthly`: `GD6HIQXVNG3NHQVPYPTRGKUP44JCPOWV2DK622VLSAIFKKXKBNFBBAUS`
+   - `end`:     `GDA2X4523QYM6EMQVGT5HPL3G3DXTOXNL7DFP7E53644NYOWBFIPLIIZ`
+2. **`POST /invest/onchain`** — 200 OK en 1.7s, retorna `position_id`
+   y `andes_transfer_id`. Cash bajó de 15 → 10 ARSa (débito confirmado).
+3. **Andes gateway** — transfer status: `Success`,
+   `tx_hash: 3bf532d9…57fbb7de` (Stellar tx real).
+4. **CMS balance** — la wallet monthly de Matías refleja `balanceARSA: 5`
+   post-transferencia (los ARSa llegaron).
+5. **`staking_sync` (5 min o forzado)** — detectó el nuevo staking en
+   CMS y reclamó el placeholder `pending_onchain`. Match: `exact` sobre
+   `(wallet, asset:arsa, modality:month, principal:5)`. La position
+   pasó a `status: active` con `memo: 1786128015` y
+   `hash: 368b22f2…0949` (Stellar tx del staking, distinto al tx de
+   transferencia).
+6. **UI cliente** — `/client/staking` muestra 1 staking activo:
+   ARSa · month · 5 · 17% · ACTIVE · maturity 9/7/26 · OURS.
+
+### Bugs encontrados y corregidos en el flow
+1. **`contract_email` no se seteaba en la position** al crearla por
+   `/client/invest/onchain`. Fix: seedear `contract_email = user.email`
+   en ambos paths de creación (mocked + onchain).
+2. **`staking_sync` sobreescribía `contract_email`** con el email de la
+   cuenta manager del CMS (`prosper@cms.com`) durante el reclaim y en
+   los upserts idempotentes. Fix: 3 puntos en `jobs/staking_sync.py`
+   (`_upsert_position` ours + `_upsert_external` update + `_try_reclaim`)
+   preservan el `contract_email` existente si el cliente ya lo tenía.
+3. **Filtro de `stakings_payload` no incluía `pending_onchain`** porque
+   exigía `memo != null` como base. Fix: al pasar `email` o `org_id`
+   (scope cliente), se relaja el gate de `memo` con un `$and[$or]`
+   permitiendo placeholders sin memo, para que el cliente vea su
+   staking en vuelo desde el instante que hace click en Invertir.
+4. **`org_id` como fallback**: si una position de la org del cliente
+   todavía no tiene `contract_email` (edge case), se incluye también
+   por `org_id` con `contract_email IN [null, ""]`.
+
+### Métricas del flujo
+- POST /invest/onchain latency: **1.7s** (respuesta al usuario).
+- Wallet Andes → wallet CMS on-chain: **< 15s** (transfer confirmada).
+- CMS crea staking desde depósito: **~9 min** en este test (asíncrono).
+- staking_sync scheduler: cada **5 min** en background + botón manual
+  en admin panel (`POST /admin/prosper/staking-sync/run`).
+
+### Postproceso desde la UI (invest → staking)
+1. Cliente hace la inversión (modal de confirmación).
+2. Toast: "Transferencia iniciada. Estamos detectando el depósito on-chain.
+   En 1-3 minutos vas a ver tu staking activo en la sección Staking."
+   con CTA "Ir a Staking".
+3. En /client/staking el staking aparece INMEDIATAMENTE como
+   `pending_onchain` (5 ARSa · month, sin memo/hash aún).
+4. Al ~5 min (o al forzar sync), la position pasa a `active` con memo
+   y hash Stellar reales. El match es idempotente (`wallet, asset,
+   modality, principal_native` exacto).
+
+### Regresión
+- 64/65 tests pasan. El único fallo (`TestCmsCreateUser::test_create_user_duplicate_409`)
+  es pre-existente — verificado con `git stash` de mis cambios.

@@ -353,8 +353,14 @@ export default function InvestPage() {
           onClose={() => setConfirmOpen(false)}
           onSuccess={(res) => {
             setConfirmOpen(false);
-            toast.success("Transferencia iniciada. Detectando depósito on-chain…",
-                            { duration: 6000 });
+            toast.success(t("post_success_title"), {
+              description: t("post_success_description"),
+              duration: 8000,
+              action: {
+                label: t("post_success_cta"),
+                onClick: () => router.push("/client/staking"),
+              },
+            });
             // Small delay so the toast is visible before nav
             setTimeout(() => router.push(
               `/client/investments?pending=${res.position_id}`), 400);

@@ -218,7 +218,10 @@ async def _upsert_position(*, raw: dict, wallet_meta: dict) -> dict:
     if raw.get("contractoId"):
         set_doc["contract_id"] = raw["contractoId"]
     if raw.get("email"):
-        set_doc["contract_email"] = raw["email"]
+        # Preserve a client-owned `contract_email` — see comment on the
+        # external path below for rationale.
+        if not (existing and existing.get("contract_email")):
+            set_doc["contract_email"] = raw["email"]
     if raw.get("hashDeposito") and raw["hashDeposito"] != "N/A":
         set_doc["deposit_hash"] = raw["hashDeposito"]
     if raw.get("proyectado") is not None:
@@ -397,6 +400,12 @@ async def _try_reclaim_pending_onchain(*, wallet: str, org_id: str,
                    "status":            "active",
                    "claimed_by_sync_at": _iso_now(),
                    "reclaim_match":     matched_kind}
+    # Preserve the client's own `contract_email` seeded at
+    # invest-time. The CMS `contract_email` is the *account manager's*
+    # email (e.g. `prosper@cms.com`) — clobbering it would hide the
+    # staking from the actual owner in `/client/staking`.
+    if target.get("contract_email"):
+        update_set["contract_email"] = target["contract_email"]
     await col(POSITIONS).update_one(
         {"position_id": target["position_id"]}, {"$set": update_set})
     logger.info("staking_sync: reclaimed pending_onchain placeholder "
@@ -501,8 +510,13 @@ async def _upsert_external(*, raw: dict) -> dict:
 
     existing = await col(POSITIONS).find_one(
         {"wallet": wallet, "memo": memo, "hash": hsh,
-         "is_deleted": {"$ne": True}}, {"_id": 0, "position_id": 1})
+         "is_deleted": {"$ne": True}}, {"_id": 0, "position_id": 1,
+                                          "contract_email": 1})
     if existing:
+        if existing.get("contract_email"):
+            # A client already owns this row (or a prior sync bound it) —
+            # never let the CMS's account-manager email overwrite that.
+            set_doc.pop("contract_email", None)
         await col(POSITIONS).update_one(
             {"position_id": existing["position_id"]}, {"$set": set_doc})
         return {"action": "updated", "external": True,

@@ -24,7 +24,8 @@ import threading
 from pathlib import Path
 from typing import Any, Optional
 
-from .adapter import HorizonAdapter, HorizonError, Payment, PaymentsPage
+from .adapter import (AccountBalance, HorizonAdapter, HorizonError,
+                       Payment, PaymentsPage)
 
 logger = logging.getLogger("prosper.horizon.mock")
 
@@ -47,6 +48,9 @@ class MockHorizonAdapter(HorizonAdapter):
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._payments: list[Payment] = []
+        # Injected account balances used by tests (address → list).
+        # Empty by default so preview simply reports zero for any account.
+        self._account_balances: dict[str, list[AccountBalance]] = {}
         self._load_fixture()
 
     # -- Fixture loading -------------------------------------------------
@@ -105,6 +109,19 @@ class MockHorizonAdapter(HorizonAdapter):
         return {"ok": True, "mode": "mock",
                  "fixture": str(_fixture_path()),
                  "payments_loaded": len(self._payments)}
+
+    # -- Test helper -----------------------------------------------------
+    def set_account_balances(self, address: str,
+                              balances: list[AccountBalance]) -> None:
+        """Inject balances that `get_account_balances(address)` will
+        return. Test-only. Overwrites any previous injection."""
+        with self._lock:
+            self._account_balances[address] = list(balances)
+
+    async def get_account_balances(self, *, address: str
+                                    ) -> list[AccountBalance]:
+        with self._lock:
+            return list(self._account_balances.get(address, []))
 
 
 # ---------------------------------------------------------------------------

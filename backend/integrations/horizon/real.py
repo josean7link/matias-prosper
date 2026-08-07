@@ -27,7 +27,8 @@ from typing import Any
 
 import httpx
 
-from .adapter import HorizonAdapter, HorizonError, Payment, PaymentsPage
+from .adapter import (AccountBalance, HorizonAdapter, HorizonError,
+                       Payment, PaymentsPage)
 from .mock import _normalize  # re-use the same normalization
 
 logger = logging.getLogger("prosper.horizon.real")
@@ -113,3 +114,42 @@ class RealHorizonAdapter(HorizonAdapter):
         except httpx.HTTPError as e:
             return {"ok": False, "mode": "real", "base": _horizon_base(),
                      "error": str(e)[:200]}
+
+    async def get_account_balances(self, *, address: str
+                                    ) -> list[AccountBalance]:
+        if not address:
+            return []
+        url = f"{_horizon_base()}/accounts/{address}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as cx:
+                r = await cx.get(url,
+                                    headers={"Accept": "application/json"})
+        except httpx.HTTPError as e:
+            logger.warning("Horizon /accounts network error for %s: %s",
+                              address, e)
+            return []
+        if r.status_code == 404:
+            # Unfunded / never-activated account — treat as zero, not an
+            # error. The UI simply shows 0.
+            return []
+        if r.status_code >= 400:
+            logger.warning("Horizon /accounts %s → HTTP %s: %s",
+                              address, r.status_code, r.text[:200])
+            return []
+        try:
+            body = r.json()
+        except ValueError:
+            return []
+        out: list[AccountBalance] = []
+        for b in body.get("balances") or []:
+            t = (b.get("asset_type") or "").lower()
+            if t == "native":
+                out.append(AccountBalance(asset_code="",
+                                            asset_issuer="",
+                                            balance=str(b.get("balance", "0"))))
+            else:
+                out.append(AccountBalance(
+                    asset_code=str(b.get("asset_code") or ""),
+                    asset_issuer=str(b.get("asset_issuer") or ""),
+                    balance=str(b.get("balance", "0"))))
+        return out

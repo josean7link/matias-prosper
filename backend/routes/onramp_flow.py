@@ -145,10 +145,26 @@ async def ensure_org_prosper_wallet(org_id: str,
                  "created":          False,
                  "wallets":          wallets}
 
-    # Provisional mapping: prosper_id := org_id. Pending partner confirmation
-    # — `prosper_id_source` lets us flip to a partner-assigned id without a
-    # schema migration.
-    prosper_id = org.get("prosper_id") or org_id
+    # Provisional mapping: prosper_id := **email of the org's client_admin**.
+    # This aligns with the Prosper CMS protocol (§6.1): the `prosperId` can
+    # be any unique string, and the platform contract dictates that we use
+    # the client's email so the CMS user list is human-readable + matches
+    # the "cash-in con el mail de la cuenta" requirement.
+    #
+    # Falls back to the org's currently-persisted `prosper_id` (which was
+    # the org_id for pre-Feb-2026 orgs), then to org_id, so existing wallets
+    # keep resolving to the same partner-side row.
+    prosper_id_override = org.get("prosper_id")
+    if not prosper_id_override:
+        from db import USERS
+        admin = await col(USERS).find_one(
+            {"org_id": org_id, "role": "client_admin",
+              "is_deleted": {"$ne": True}},
+            {"_id": 0, "email": 1},
+            sort=[("created_at", 1)])
+        email = (admin or {}).get("email")
+        prosper_id_override = email or org_id
+    prosper_id = prosper_id_override
 
     ptx = f"wallet_{org_id}_{modality}_{secrets.token_hex(4)}"
     try:
@@ -156,12 +172,17 @@ async def ensure_org_prosper_wallet(org_id: str,
             user_reference_id=prosper_id, prosper_tx_id=ptx,
             modality=modality)
     except Exception as real_err:  # noqa: BLE001
-        # In `development` PROSPER_MODE the dev API may reject
-        # create_user_wallet (e.g. credentials lack admin scope). We fall
-        # back to the local mock adapter so the alta E2E proceeds with a
-        # deterministic wallet. This NEVER happens in `production` mode.
+        # `development` PROSPER_MODE points at the REAL CMS with real
+        # credentials — treat CMS failures as real failures. Only fall
+        # back to mock when explicitly in `mock` mode (local dev without
+        # CMS). Falling back silently used to fabricate hex-shaped
+        # addresses that Andes then correctly rejected as "Invalid
+        # address" — we now surface the CMS error instead.
         mode = (os.environ.get("PROSPER_MODE") or "mock").lower()
-        if mode == "production":
+        if mode != "mock":
+            logger.warning("Prosper CMS create_user_wallet failed "
+                              "(mode=%s, prosperId=%s, modality=%s): %s",
+                              mode, prosper_id, modality, real_err)
             raise
         from integrations.prosper.mock import MockProsperAdapter
         logger.warning("Prosper REAL create_user_wallet failed (%s); "
@@ -183,6 +204,19 @@ async def ensure_org_prosper_wallet(org_id: str,
                         or raw.get("walletAddress")
                         or raw.get("address")
                         or "")
+    # Safety net: refuse to persist a wallet whose address isn't a real
+    # Stellar public key. This used to happen when a legacy fallback
+    # generated hex-shaped placeholders — Andes then rejected the
+    # outbound transfer as "Invalid address", surfacing to the user as
+    # a mysterious 502. Better to fail here with a clear message.
+    if not _is_valid_stellar_address(stellar_address):
+        logger.error("ensure_org_prosper_wallet: partner returned an "
+                        "invalid Stellar address %r for org=%s "
+                        "modality=%s prosperId=%s — refusing to persist",
+                        stellar_address, org_id, modality, prosper_id)
+        raise RuntimeError(
+            "El CMS de Prosper devolvió una dirección de wallet inválida. "
+            "Reintentá en unos minutos.")
 
     wallet_entry = {"modality":        modality,
                      "address":         stellar_address,

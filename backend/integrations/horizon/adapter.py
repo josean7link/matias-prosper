@@ -57,6 +57,17 @@ class PaymentsPage:
     next_cursor: str   # the paging_token of the LAST item, or echo of input
 
 
+@dataclass
+class AccountBalance:
+    """Trustline balance on a Stellar account as reported by
+    `GET /accounts/{id}`. `asset_code` == "" and `asset_issuer` == ""
+    means the native XLM balance.
+    """
+    asset_code:   str
+    asset_issuer: str
+    balance:      str   # decimal as string — never float for money
+
+
 class HorizonAdapter(ABC):
     """Public surface used by the Deposit Watcher.
 
@@ -84,3 +95,15 @@ class HorizonAdapter(ABC):
     async def health_check(self) -> dict:
         """Quick liveness probe. Returns {ok: bool, mode: str, …}."""
         ...
+
+    async def get_account_balances(self, *, address: str
+                                    ) -> list[AccountBalance]:
+        """Best-effort read of `GET /accounts/{address}` balances.
+
+        The default implementation returns an empty list so mock/legacy
+        adapters keep working. Real implementations query Horizon.
+        Callers MUST treat failures as "unknown" and never block on
+        this (the watcher is the source of truth for deposits — this
+        is only used to surface a live on-chain balance in the UI).
+        """
+        return []

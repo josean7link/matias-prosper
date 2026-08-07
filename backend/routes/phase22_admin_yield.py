@@ -502,15 +502,48 @@ async def list_cms_stakings(
 
 async def stakings_payload(*, scope: str = "all",
                             asset: Optional[str] = None,
-                            status: Optional[str] = None) -> dict:
-    """Shared staking listing (used by admin + client portal routers)."""
+                            status: Optional[str] = None,
+                            email: Optional[str] = None,
+                            org_id: Optional[str] = None) -> dict:
+    """Shared staking listing (used by admin + client portal routers).
+
+    When `email` is provided, results are scoped to positions whose
+    `contract_email` (populated at cash-in creation) equals the given
+    email. When `org_id` is also provided, positions owned by that org
+    that don't yet have `contract_email` set (e.g. placeholders created
+    by `/client/invest/onchain` before the CMS backfills the email)
+    are ALSO included — so the client sees their in-flight staking as
+    soon as they hit "Invertir", not only after the CMS syncs.
+
+    Internal roles pass `email=None`/`org_id=None` and see everything.
+    """
     base: dict = {"wallet": {"$exists": True, "$ne": None},
-                   "memo":   {"$exists": True, "$ne": None},
                    "is_deleted": {"$ne": True}}
+    if email or org_id:
+        # Client scope: show `pending_onchain` placeholders too (they
+        # have `memo: null` because the CMS hasn't backfilled the memo
+        # yet). Admins keep the stricter filter — see the else branch.
+        base["$and"] = [{"$or": [{"memo": {"$exists": True, "$ne": None}},
+                                    {"status": "pending_onchain"}]}]
+    else:
+        base["memo"] = {"$exists": True, "$ne": None}
     if asset:
         base["asset"] = asset
     if status:
         base["status"] = status
+    if email or org_id:
+        clauses: list[dict] = []
+        if email:
+            clauses.append({"contract_email":
+                             {"$regex": f"^{email}$", "$options": "i"}})
+        if org_id:
+            # Client-owned rows without contract_email (yet). This
+            # includes `pending_onchain` placeholders and positions
+            # where the CMS hasn't backfilled the email column.
+            clauses.append({"org_id": org_id,
+                             "contract_email":
+                                 {"$in": [None, ""]}})
+        base["$or"] = clauses
 
     async def _fetch(q: dict, limit: int = 200) -> list[dict]:
         rows = await col(POSITIONS).find(q, {"_id": 0}).sort(
