@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
@@ -7,23 +7,57 @@ import { ArrowRight } from "lucide-react";
 import { ProsperLogo } from "@/components/ProsperLogo";
 import { ThemeToggleStandalone } from "@/components/ThemeToggle";
 
+// Diagnostic reasons appended by the Edge middleware / OTP page so the
+// user understands WHY they landed back on the login instead of a silent
+// loop (tester-reported bug, Jun 2026).
+const REASON_MESSAGES: Record<string, string> = {
+  "invalid-session":
+    "Tu sesión no pudo validarse y fue cerrada. Volvé a ingresar. " +
+    "Si esto se repite, el servidor tiene una configuración de sesión " +
+    "inconsistente (JWT_SECRET distinto entre frontend y backend).",
+  "otp-flow-lost":
+    "El flujo del código se perdió (pestaña nueva o sesión de navegación " +
+    "reiniciada). Ingresá tu email para pedir un código nuevo.",
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const search = useSearchParams();
   const next = search.get("next") || "";   // empty = decide by role post-auth
+  const reason = search.get("reason") || "";
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!reason || !REASON_MESSAGES[reason]) return;
+    // Deferred: toasts fired before sonner's <Toaster> hydrates are lost.
+    const t = setTimeout(
+      () => toast.error(REASON_MESSAGES[reason], { duration: 9000 }), 400);
+    return () => clearTimeout(t);
+  }, [reason]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
     setLoading(true);
     try {
-      const { code, dev_otp } = await api<{ code: string; dev_otp?: string }>(
+      const { code, dev_otp, email_status, email_error } =
+        await api<{ code: string; dev_otp?: string;
+                     email_status?: string; email_error?: string }>(
         "/v1/auth/passwordless-login", {
           method: "POST", body: JSON.stringify({ email: email.trim().toLowerCase() }),
         });
+      // Provider rejected the send (e.g. Resend sandbox/domain error).
+      // Without a code in the inbox the OTP page is a dead end — surface
+      // the provider error and stay here.
+      if (email_status === "failed" && !dev_otp) {
+        toast.error(
+          `No pudimos enviar el email con tu código. Respuesta del proveedor: ${
+            email_error || "error desconocido"}`,
+          { duration: 12000 });
+        return;
+      }
       // Stash continuation + email in sessionStorage to bridge to OTP page
       sessionStorage.setItem("prosper_otp_code", code);
       sessionStorage.setItem("prosper_otp_email", email.trim().toLowerCase());

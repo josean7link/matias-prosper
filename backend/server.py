@@ -79,6 +79,22 @@ logger = logging.getLogger("prosper")
 # App config
 # ---------------------------------------------------------------------------
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() == "true"
+
+# DEMO_MODE (Jun 2026, directiva del usuario): la plataforma se usa para
+# demos — los accesos demo (/access + dev-login) y el código OTP visible en
+# pantalla están SIEMPRE activos, sin depender de RESEND_API_KEY. Apagar con
+# DEMO_MODE=false cuando se pase a producción real con emails configurados.
+DEMO_MODE = os.environ.get("DEMO_MODE", "true").lower() == "true"
+
+
+def _cookie_secure(request: Request) -> bool:
+    """Secure cookies on https; plain on http so demo servers without TLS
+    (e.g. http://ip:3000) don't silently drop the session cookie."""
+    if not COOKIE_SECURE:
+        return False
+    proto = (request.headers.get("x-forwarded-proto")
+              or request.url.scheme or "").lower()
+    return proto != "http"
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 OTP_TTL = 600
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
@@ -231,11 +247,13 @@ async def _otp_pop(token: str):
     return doc["code"], doc["email"]
 
 
-async def _send_otp(email: str, code: str):
+async def _send_otp(email: str, code: str) -> dict:
     """Send the 4-digit OTP. Routed through `email_sender.send_email` so:
      - real Resend send when RESEND_API_KEY is set (with verified domain)
      - persistent fallback to `outbound_emails` collection if Resend fails
      - always traceable from the admin email log (audit-grade)
+    Returns the email record ({status, error, ...}) so callers can surface
+    delivery failures to the user instead of failing silently.
     """
     from integrations.email_sender import _shell, send_email
     body = f"""
@@ -251,11 +269,16 @@ async def _send_otp(email: str, code: str):
             html=_shell(body), template="otp_login",
             context={"code_len": len(code)})
         if rec.get("status") == "failed":
-            logger.error("OTP send failed for %s: %s", email, rec.get("error"))
+            # Ops escape hatch: the code is retrievable from backend logs
+            # when the email provider is down (same precedent as dev mode).
+            logger.error("OTP send FAILED for %s: %s — code was %s",
+                          email, rec.get("error"), code)
         elif rec.get("status") == "preview_only":
             logger.warning("[DEV OTP] %s -> %s (RESEND_API_KEY not set)", email, code)
+        return rec
     except Exception as e:
         logger.error("send_email crashed for %s: %s — code was %s", email, e, code)
+        return {"status": "failed", "error": str(e)[:200]}
 
 
 # ---------------------------------------------------------------------------
@@ -280,12 +303,17 @@ async def passwordless_login(request: Request, body: LoginIn):
     otp = f"{secrets.randbelow(10000):04d}"
     cont = secrets.token_urlsafe(24)
     await _otp_put(cont, otp, body.email.lower())
-    await _send_otp(body.email, otp)
-    payload = {"code": cont}
-    # Dev/preview convenience: when there's no real email transport configured
-    # we surface the OTP in the response so the user can sign in without
-    # tailing the backend log. Disabled automatically as soon as RESEND is set.
-    if not RESEND_API_KEY:
+    rec = await _send_otp(body.email, otp)
+    payload = {"code": cont, "email_status": rec.get("status", "unknown")}
+    # Surface provider failures so the UI can tell the user the email did
+    # NOT go out (instead of an eternal "check your inbox"). The message is
+    # truncated and comes from the provider (e.g. Resend domain/sandbox
+    # errors) — useful for both the end user and ops.
+    if rec.get("status") == "failed":
+        payload["email_error"] = str(rec.get("error") or "")[:200]
+    # Demo/preview: en DEMO_MODE el OTP viaja en la respuesta y se muestra
+    # en pantalla, así el acceso nunca depende del email.
+    if DEMO_MODE or not RESEND_API_KEY:
         payload["dev_otp"] = otp
     return payload
 
@@ -341,7 +369,8 @@ async def passwordless_token(request: Request, body: TokenIn, response: Response
     access = await mint_session_token(
         user_id=user_doc["user_id"], email=email, role=role,
         org_id=user_doc.get("org_id"), request=request)
-    response.set_cookie("prosper_session", access, httponly=True, secure=COOKIE_SECURE,
+    response.set_cookie("prosper_session", access, httponly=True,
+                        secure=_cookie_secure(request),
                         samesite="lax", path="/", max_age=7*24*3600)
     # Tell the SPA which portal to land in. The frontend will use this as
     # the authoritative destination (ignoring any stale `?next=` from the
@@ -401,8 +430,8 @@ def _safe_next(req_next: str, role: Role) -> str:
 
 @v1.get("/auth/dev-login")
 async def dev_login(email: str, request: Request, next: str = ""):
-    if RESEND_API_KEY:
-        raise HTTPException(404, "Not found")  # disable in production silently
+    if not DEMO_MODE:
+        raise HTTPException(404, "Not found")  # disabled outside demo mode
     email = email.lower().strip()
 
     user_doc = await col(USERS).find_one({"email": email}, {"_id": 0})
@@ -436,7 +465,8 @@ async def dev_login(email: str, request: Request, next: str = ""):
     # Decide destination by ROLE, not by querystring alone.
     safe_next = _safe_next(next, role)
     resp = RedirectResponse(url=safe_next, status_code=303)
-    resp.set_cookie("prosper_session", access, httponly=True, secure=COOKIE_SECURE,
+    resp.set_cookie("prosper_session", access, httponly=True,
+                    secure=_cookie_secure(request),
                     samesite="lax", path="/", max_age=7*24*3600)
     return resp
 

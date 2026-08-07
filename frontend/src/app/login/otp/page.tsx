@@ -24,7 +24,7 @@ export default function OtpPage() {
   useEffect(() => {
     const c = sessionStorage.getItem("prosper_otp_code");
     const e = sessionStorage.getItem("prosper_otp_email");
-    if (!c || !e) { router.replace("/login"); return; }
+    if (!c || !e) { router.replace("/login?reason=otp-flow-lost"); return; }
     setCode(c); setEmail(e);
     const dev = sessionStorage.getItem("prosper_otp_dev");
     if (dev && /^\d{4}$/.test(dev)) {
@@ -110,10 +110,19 @@ export default function OtpPage() {
   const resend = async () => {
     if (resendIn > 0 || !email) return;
     try {
-      const { code: newCode, dev_otp } = await api<{ code: string; dev_otp?: string }>(
+      const { code: newCode, dev_otp, email_status, email_error } =
+        await api<{ code: string; dev_otp?: string;
+                     email_status?: string; email_error?: string }>(
         "/v1/auth/passwordless-login", {
           method: "POST", body: JSON.stringify({ email }),
         });
+      if (email_status === "failed" && !dev_otp) {
+        toast.error(
+          `El proveedor de correo rechazó el envío: ${
+            email_error || "error desconocido"}`,
+          { duration: 12000 });
+        return;
+      }
       sessionStorage.setItem("prosper_otp_code", newCode);
       setCode(newCode);
       setResendIn(20);
@@ -163,9 +172,9 @@ export default function OtpPage() {
             >
               <div className="text-warning text-lg leading-none mt-0.5">⚠</div>
               <div className="text-xs text-fg-muted">
-                <strong className="text-fg">Modo dev / preview activo.</strong>{" "}
-                Resend no está configurado (vacío en <code className="font-mono">RESEND_API_KEY</code>),
-                así que el mail no se envió. Tu código es{" "}
+                <strong className="text-fg">Modo demo activo.</strong>{" "}
+                El sistema de email no está configurado, así que te mostramos
+                el código acá. Tu código es{" "}
                 <span className="font-mono text-fg text-base font-bold tracking-widest"
                        data-testid="otp-dev-code">{devOtp}</span>{" "}
                 — ya lo pre-cargamos abajo, hacé click en <strong>Verify</strong>.

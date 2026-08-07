@@ -363,27 +363,9 @@ function WalletsTab({ base, onRequestCashin }:
     useSWR<CmsWalletsResp>(`${base}/cms/wallets`, fetcher);
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
-  const [newEmail, setNewEmail] = useState("");
-  const [creating, setCreating] = useState(false);
 
   const copyWallet = (w: string) =>
     copyText(w, t("copied", { label: t("wallet") }));
-
-  const createAccount = async () => {
-    const email = newEmail.trim();
-    if (!email || !email.includes("@")) { toast.error(t("wallets.invalid_email")); return; }
-    setCreating(true);
-    try {
-      const r = await api<{ email: string; user_id: number }>(
-        `${base}/cms/users`,
-        { method: "POST", body: JSON.stringify({ email }) });
-      toast.success(t("wallets.account_created", { id: r.user_id ?? "—" }));
-      setNewEmail("");
-      mutate();
-    } catch (e: any) {
-      toast.error(e?.message || t("wallets.account_failed"));
-    } finally { setCreating(false); }
-  };
 
   const items = useMemo(() => {
     const rows = data?.items || [];
@@ -400,26 +382,9 @@ function WalletsTab({ base, onRequestCashin }:
 
   return (
     <div data-testid="staking-tab-wallets">
-      <div className="flex flex-wrap items-center gap-2 mb-3 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-3"
-           data-testid="staking-create-account-box">
-        <p className="text-xs uppercase tracking-wider text-[rgb(var(--fg-muted))] w-full sm:w-auto">
-          {t("wallets.new_account")}
-        </p>
-        <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
-               onKeyDown={(e) => e.key === "Enter" && createAccount()}
-               placeholder={t("wallets.email_placeholder")}
-               className="rounded-md border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-1.5 text-xs font-mono w-72"
-               data-testid="staking-create-account-email" />
-        <button onClick={createAccount} disabled={creating}
-                className="inline-flex items-center gap-1.5 rounded-md bg-[#2B6BFF] text-white px-3 py-1.5 text-xs hover:opacity-90 disabled:opacity-50"
-                data-testid="staking-create-account-btn">
-          {creating ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-          {t("wallets.create_account")}
-        </button>
-        <span className="text-[11px] text-[rgb(var(--fg-muted))]">
-          {t("wallets.create_hint")}
-        </span>
-      </div>
+      <p className="mb-3 text-[11px] text-[rgb(var(--fg-muted))]" data-testid="staking-wallets-v2-note">
+        {t("wallets.v2_note")}
+      </p>
 
       <div className="flex items-center gap-2 mb-4">
         <div className="relative">

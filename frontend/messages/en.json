@@ -759,13 +759,6 @@
       "deposit_hash": "Deposit hash"
     },
     "wallets": {
-      "new_account": "New CMS account",
-      "email_placeholder": "email@client.com",
-      "create_account": "Create account",
-      "create_hint": "Registers the user in the CMS; the wallet is assigned later via a cash-in request.",
-      "invalid_email": "Enter a valid email",
-      "account_created": "Account created in the CMS — userId {id}",
-      "account_failed": "Account creation failed",
       "search_placeholder": "Search prosperId, email, address…",
       "total": "{shown} of {total} wallets · mode {mode}",
       "error": "Error reading /cms/users: {msg}",
@@ -780,7 +773,8 @@
       "copy": "Copy",
       "view_expert": "View on stellar.expert",
       "new_request": "New request",
-      "new_request_title": "Create a cash-in request for this account"
+      "new_request_title": "Create a cash-in request for this account",
+      "v2_note": "CMS v2.0 creates the account together with the wallet: use “New request” (cash-in) to register a new client."
     },
     "cashin": {
       "intro": "Registers a cash-in request in the CMS: assigns a unique Stellar wallet to the client (by email) according to the settlement modality. The client then transfers USDC or ARSa to that wallet to start staking.",

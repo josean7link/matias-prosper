@@ -90,10 +90,12 @@ export async function middleware(req: NextRequest) {
   const claims = await readClaims(session.value);
   if (!claims?.role) {
     // Invalid / expired / tampered cookie → force re-login. The backend
-    // would 401 anyway on the next API call.
+    // would 401 anyway on the next API call. `reason` lets the login page
+    // explain the loop (e.g. JWT_SECRET mismatch between front and back).
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
+    url.searchParams.set("reason", "invalid-session");
     const r = NextResponse.redirect(url);
     r.cookies.delete("prosper_session");
     return r;

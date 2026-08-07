@@ -205,8 +205,8 @@ export default function AccessPage() {
 
           {/* Tech footer */}
           <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-fg-subtle mt-12">
-            <span className="text-fg">/api/v1/auth/dev-login</span> · solo en preview · deshabilitado cuando
-            <span className="text-fg ml-1">RESEND_API_KEY</span> esté configurado.
+            <span className="text-fg">/api/v1/auth/dev-login</span> · activo mientras
+            <span className="text-fg ml-1">DEMO_MODE=true</span> (default) · apagar en producción real.
           </p>
         </div>
       </main>

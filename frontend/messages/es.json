@@ -759,13 +759,6 @@
       "deposit_hash": "Hash depósito"
     },
     "wallets": {
-      "new_account": "Nueva cuenta CMS",
-      "email_placeholder": "email@cliente.com",
-      "create_account": "Crear cuenta",
-      "create_hint": "Registra el usuario en el CMS; la wallet se asigna después con una solicitud de cash-in.",
-      "invalid_email": "Ingresá un email válido",
-      "account_created": "Cuenta creada en el CMS — userId {id}",
-      "account_failed": "Falló la creación de la cuenta",
       "search_placeholder": "Buscar prosperId, email, address…",
       "total": "{shown} de {total} wallets · modo {mode}",
       "error": "Error leyendo /cms/users: {msg}",
@@ -780,7 +773,8 @@
       "copy": "Copiar",
       "view_expert": "Ver en stellar.expert",
       "new_request": "Nueva solicitud",
-      "new_request_title": "Generar solicitud de cash-in para esta cuenta"
+      "new_request_title": "Generar solicitud de cash-in para esta cuenta",
+      "v2_note": "El CMS v2.0 crea la cuenta junto con la wallet: usá «Nueva solicitud» (cash-in) para registrar un cliente nuevo."
     },
     "cashin": {
       "intro": "Registra una solicitud de cash-in en el CMS: asigna una wallet Stellar única al cliente (por email) según la modalidad de liquidación. El cliente luego transfiere USDC o ARSa a esa wallet para iniciar el staking.",

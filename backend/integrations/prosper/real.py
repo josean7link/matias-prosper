@@ -166,7 +166,7 @@ class RealProsperAdapter(ProsperAdapter):
             [{"userId", "email", "address", "cashin"}, …]
         We accept both and search across all entries.
         """
-        users = await self._request("GET", "/api/v1/cliente/users")
+        users = await self._request("GET", "/api/v1/cms/users")
         if isinstance(users, dict):
             buckets = []
             for k in ("prosper", "alfred", "items"):
@@ -198,7 +198,7 @@ class RealProsperAdapter(ProsperAdapter):
         (the live API groups rows by integration; the doc shape is flat).
         Formatting is the frontend's job.
         """
-        users = await self._request("GET", "/api/v1/cliente/users")
+        users = await self._request("GET", "/api/v1/cms/users")
         items: list[dict] = []
         if isinstance(users, dict):
             for k in ("prosper", "alfred", "items"):
@@ -210,15 +210,15 @@ class RealProsperAdapter(ProsperAdapter):
         return {"items": items, "raw": users}
 
     async def create_cms_user(self, *, email: str) -> dict:
-        """POST /cliente/users — register a new CMS account by email.
+        """CMS v2.0 (Jun 2026) removed `POST /cliente/users`.
 
-        The partner returns the numeric userId (bare number or object).
+        Registration is now implicit: `POST /cms/cashin {prosperId, cashin}`
+        creates the account AND assigns the wallet in one step.
         """
-        resp = await self._request("POST", "/api/v1/cliente/users",
-                                     {"email": email})
-        uid = resp if isinstance(resp, (int, float, str)) else \
-            (resp or {}).get("userId") or (resp or {}).get("id")
-        return {"user_id": uid, "raw": resp}
+        raise ProsperError(
+            "El CMS v2.0 eliminó el alta de cuenta separada — usá una "
+            "solicitud de cash-in (crea la cuenta y asigna la wallet en "
+            "un solo paso)")
 
     # ---------------------------------------------------------------------
     # Wallet provisioning — POST /cms/cashin {prosperId, cashin}
@@ -238,7 +238,7 @@ class RealProsperAdapter(ProsperAdapter):
         first wallet ever created instead of the new one. The truth lives
         in `GET /cms/users`, so this lookup is the source of truth.
         """
-        users = await self._request("GET", "/api/v1/cliente/users")
+        users = await self._request("GET", "/api/v1/cms/users")
         if isinstance(users, dict):
             buckets = []
             for k in ("prosper", "alfred", "items"):
@@ -298,20 +298,12 @@ class RealProsperAdapter(ProsperAdapter):
                       "cashin_modality": modality,
                       "source": "cms_users"})
 
-        # 2) Ensure the user row exists (June 2026 CMS migration: identity
-        #    is email-based; `prosperId` maps to `clientEmail`). Tolerate
-        #    "already exists" errors — the cashin step is what matters.
-        try:
-            await self._request("POST", "/api/v1/cliente/users",
-                                  {"email": prosper_id})
-        except ProsperError as e:
-            logger.info("CMS create-user skipped (%s) — assuming existing "
-                         "user for %s", e, prosper_id)
-
-        # 3) Provision via cashin endpoint.
-        cashin_resp = await self._request("POST", "/api/v1/cliente/cashin",
-                                            {"clientEmail": prosper_id,
-                                             "cashin":      modality})
+        # 2) Provision via cashin endpoint (CMS v2.0: registration is
+        #    implicit — `POST /cms/cashin {prosperId, cashin}` creates the
+        #    account AND the wallet in one step; CashinDto per Swagger).
+        cashin_resp = await self._request("POST", "/api/v1/cms/cashin",
+                                            {"prosperId": prosper_id,
+                                             "cashin":    modality})
 
         # 3) Re-read /cms/users — partner POST body may echo the wrong
         #    address (the one of the FIRST modality ever created for this
@@ -385,7 +377,7 @@ class RealProsperAdapter(ProsperAdapter):
     # We accept both and surface a stable normalized dict upstream.
     # ---------------------------------------------------------------------
     async def get_treasury(self) -> dict:
-        resp = await self._request("GET", "/api/v1/admin/treasury")
+        resp = await self._request("GET", "/api/v1/cms/treasury")
         # Unwrap if nested under `treasury`.
         body = resp.get("treasury") if isinstance(resp, dict) \
                 and isinstance(resp.get("treasury"), dict) else resp
@@ -442,7 +434,7 @@ class RealProsperAdapter(ProsperAdapter):
         The CMS endpoint returns the full list (per partner). We filter
         client-side because the API does not expose query params yet.
         """
-        rows = await self._request("GET", "/api/v1/cliente/staking", ok_404=True)
+        rows = await self._request("GET", "/api/v1/cms/staking", ok_404=True)
         if not isinstance(rows, list):
             return []
         out = [self._normalize_staking(r) for r in rows]

@@ -2394,3 +2394,65 @@ trackeado). `gc.auto=0` ya seteado. Si mongo cae en FATAL: borrar
 - P1: Deposit Watcher no cableado al startup de server.py.
 - P1: fixture CUIT `.zfill(8)` en test_iter27_activation_helper.py.
 - P1: ARSa Safety Backup Poller. P2: extraer KycCaptureForm; i18n banner KYC.
+
+## 2026-06 — Migración a CMS Prosper v2.0 (endpoints renombrados)
+- **Bug reportado por usuario**: endpoints del CMS fallando. Root cause: el CMS
+  (cmsback.protocol-prosper.io) migró a v2.0 y renombró rutas; las viejas devuelven 404.
+- **Mapeo aplicado en `integrations/prosper/real.py`** (único archivo con paths):
+  - `GET /api/v1/cliente/users`   → `GET /api/v1/cms/users`
+  - `GET /api/v1/cliente/staking` → `GET /api/v1/cms/staking`
+  - `GET /api/v1/admin/treasury`  → `GET /api/v1/cms/treasury`
+  - `POST /api/v1/cliente/cashin {clientEmail}` → `POST /api/v1/cms/cashin {prosperId, cashin}` (CashinDto)
+  - `POST /api/v1/cliente/users` **ELIMINADO en v2** (sin reemplazo): el alta es
+    implícita en el cashin. `create_cms_user()` ahora lanza ProsperError explicativo;
+    la caja "Nueva cuenta CMS" se quitó del tab Wallets (reemplazada por nota i18n
+    `staking.wallets.v2_note` ES/EN).
+- Swagger v2.0 confirmado vía /api/docs-json: solo 6 endpoints (login, change-password,
+  cms/treasury, cms/users GET, cms/cashin POST, cms/staking GET). Sin webhooks; polling.
+- **Verificado E2E** (curl + screenshot): treasury ✓, stakings (14: 3 propios + 11 CMS) ✓,
+  wallets (33) ✓, emails ✓, cashin idempotente reused=true ✓, staking-sync run ✓.
+- **Dato**: el depósito de prueba del usuario (75 ARSa, ducampcarlos@gmail.com) YA fue
+  procesado por el CMS → staking id 28, memo 1786057215, vence 2027-08-06.
+
+## 2026-06 — Fix observabilidad flujo de acceso (reporte de tester externo)
+- **Reporte**: (1) error del proveedor de correo durante el acceso; (2) al ingresar
+  el token manualmente, redirige de vuelta al Login en vez del Dashboard.
+- **Root causes identificadas**:
+  1. Cuando RESEND_API_KEY está seteada pero Resend rechaza el envío (key inválida,
+     o `RESEND_FROM=onboarding@resend.dev` que SOLO permite enviar al dueño de la
+     cuenta Resend), el backend registraba el fallo pero la UI no mostraba nada.
+  2. La vuelta al Login tiene 2 causas posibles indistinguibles hasta ahora:
+     (a) middleware Edge rechaza la cookie (JWT_SECRET distinto entre frontend y
+     backend en el entorno del tester); (b) página OTP pierde el continuation
+     (sessionStorage vacío en pestaña nueva) y rebota silenciosamente.
+- **Fixes** (backend `server.py`, frontend `login/page.tsx`, `login/otp/page.tsx`,
+  `middleware.ts`):
+  - `passwordless-login` ahora devuelve `email_status` + `email_error` (texto del
+    proveedor). Login y Resend muestran toast con el error real y NO avanzan a OTP.
+  - OTP fallido en envío → código logueado en backend (`OTP send FAILED ... code was X`)
+    como escape de ops.
+  - Middleware agrega `?reason=invalid-session` al expulsar cookie inválida; OTP
+    agrega `?reason=otp-flow-lost`. Login muestra toast explicativo por reason
+    (diferido 400ms — sonner pierde toasts pre-hidratación).
+- **Verificado E2E**: toast con error Resend 401 real ✓, toasts de ambos reasons ✓,
+  flujo OTP completo login→código→/admin ✓, dev-login preview ✓.
+- **Guía deploy pendiente de confirmar con el tester**: en el entorno donde prueban,
+  (1) verificar dominio propio en Resend y setear RESEND_FROM a ese dominio (el
+  sandbox resend.dev no sirve para enviar a terceros); (2) confirmar que JWT_SECRET
+  sea IDÉNTICO en backend y frontend.
+
+## 2026-06 — DEMO_MODE: acceso demo siempre disponible (directiva usuario)
+- La plataforma se usa para demos → nuevo flag `DEMO_MODE` (default **true**) en
+  `backend/server.py` + `backend/.env`:
+  - `/api/v1/auth/dev-login` (magic links de /access) SIEMPRE activo, ya no
+    depende de RESEND_API_KEY.
+  - `passwordless-login` SIEMPRE devuelve `dev_otp` → el código se muestra en
+    pantalla (banner "Modo demo activo") aunque Resend esté configurado o falle.
+  - Apagar con `DEMO_MODE=false` cuando haya producción real con emails.
+- Cookie de sesión ahora `Secure` solo sobre https (`_cookie_secure()` mira
+  x-forwarded-proto): las demos servidas por http:// ya no pierden la sesión.
+- Textos actualizados: banner OTP ("Modo demo activo…") y footer de /access.
+- NOTA BUG TOOLING: 2 veces un search_replace reportó éxito pero no persistió
+  (hot-reload race). SIEMPRE verificar con grep tras editar server.py/real.py.
+- Verificado E2E simulando el entorno del tester (RESEND_API_KEY con key inválida):
+  dev-login 303 ✓, dev_otp presente ✓, banner + código prellenado ✓, Verify → /client ✓.
