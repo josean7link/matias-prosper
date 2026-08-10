@@ -690,6 +690,7 @@ interface CmsStaking {
   start?: string;
   maturity?: string;
   contract_email?: string;
+  client_email?: string;
   contract_id?: string;
   contract_provides_interest?: boolean;
   accrued_interest?: number;
@@ -889,7 +890,7 @@ function StakingTable({ items, external }:
               </td>
               {external && (
                 <td className="px-3 py-2 text-fg-subtle">
-                  {p.contract_email || "—"}
+                  {p.client_email || p.contract_email || "—"}
                 </td>
               )}
             </tr>

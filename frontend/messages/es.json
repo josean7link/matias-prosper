@@ -702,7 +702,7 @@
     "wallet": "Wallet",
     "tabs": {
       "stakings": "Stakings",
-      "wallets": "Wallets CMS",
+      "wallets": "Stakings Wallets",
       "cashin": "Nueva solicitud"
     },
     "pager": {
@@ -790,14 +790,18 @@
       "mod_month_label": "month · Mes a mes",
       "mod_month_desc": "Ganancias liquidadas mensualmente con pausa de 24h para decidir retiro o reinversión.",
       "submit": "Crear solicitud de cash-in",
-      "success_reused": "Wallet ya existente para ese email + modalidad",
+      "success_reused": "Wallet ya existente para ese cliente + modalidad",
       "success_created": "Solicitud de cash-in creada — wallet asignada",
       "failed": "Falló la solicitud de cash-in",
       "wallet_reused": "Wallet existente",
       "wallet_assigned": "Wallet asignada",
       "result_meta": "email {email} · modalidad {modality}",
       "address_pending": "(pendiente — reintentá el listado de wallets)",
-      "instructions": "Instrucción para el cliente: transferir USDC o ARSa (red Stellar) a esta wallet para iniciar el staking."
+      "instructions": "Instrucción para el cliente: transferir USDC o ARSa (red Stellar) a esta wallet para iniciar el staking.",
+      "all_modalities_configured": "El usuario ya tiene ambas modalidades disponibles ('month' y 'end').",
+      "already_configured_notice": "Este cliente ya tiene registradas las 2 modalidades de liquidación disponibles ('month' y 'end'). Podés consultar o copiar sus wallets a continuación.",
+      "existing_wallets_title": "Wallets asignadas al usuario",
+      "modality_already_configured": "Ya configurada"
     },
     "treasury": {
       "usdc": "Tesorería · USDC",

@@ -6,10 +6,10 @@
  *   client → /v1/client/staking  (mismos sufijos, mismo acceso por directiva del usuario)
  * i18n: namespace `staking` en messages/{en,es}.json (next-intl).
  */
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import {
-  ChevronDown, ChevronRight, Copy, ExternalLink, Loader2, Plus,
+  CheckCircle2, ChevronDown, ChevronRight, Copy, ExternalLink, Loader2, Plus,
   RefreshCw, Search, Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -88,7 +88,7 @@ interface StakingRow {
   apr_bps?: number; claimed_interest?: number; accrued_interest?: number;
   principal_redeemed?: number; projected_interest?: number;
   daily_interest?: number; next_payout?: string | number | null;
-  contract_id?: string; contract_email?: string; deposit_hash?: string;
+  contract_id?: string; contract_email?: string; client_email?: string; deposit_hash?: string;
   contract_provides_interest?: boolean;
 }
 interface StakingsResp {
@@ -107,8 +107,24 @@ interface CmsWalletsResp {
   items: CmsWalletRow[]; total: number; mode: string; fetched_at: string;
 }
 interface CashinResp {
-  prosper_id: string; email?: string; modality: string;
+  prosper_id: string; org_id?: string; email?: string; modality: string;
   asset?: string | null; address: string; status: string; reused: boolean;
+}
+interface UserOption {
+  email: string;
+  org_id: string;
+  user_id?: string;
+  name?: string;
+  prosper_wallets?: {
+    modality?: string;
+    address?: string;
+    [k: string]: unknown;
+  }[];
+}
+interface EmailsResp {
+  emails: string[];
+  items?: UserOption[];
+  total: number;
 }
 
 function Detail({ label, value, mono }:
@@ -246,7 +262,7 @@ function StakingsTab({ base }: { base: string }) {
                           data-testid={`staking-row-expand-${i}`}>
                         {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       </td>
-                      <td className="px-3 py-2 text-xs">{r.contract_email || "—"}</td>
+                      <td className="px-3 py-2 text-xs">{r.client_email || r.contract_email || "—"}</td>
                       <td className="px-3 py-2 font-mono uppercase">{r.asset || "—"}</td>
                       <td className="px-3 py-2">{r.modality || "—"}</td>
                       <td className="px-3 py-2 text-right font-mono">{fmtAmount(r.principal_native, r.asset, loc)}</td>
@@ -373,9 +389,39 @@ function WalletsTab({ base, onRequestCashin, allowManualCashin }:
     const needle = q.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((r) =>
-      [r.prosperId, r.userId, r.email, r.address, r.cashin]
+      [r.prosperId, r.userId, r.email, r.address, r.cashin, r.modality]
         .some((v) => String(v || "").toLowerCase().includes(needle)));
   }, [data, q]);
+
+  // Group unique modalities per user
+  const userModalitiesMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    (data?.items || []).forEach((r) => {
+      const keys = [r.email, r.prosperId, r.userId]
+        .filter(Boolean)
+        .map((k) => String(k).toLowerCase().trim());
+      const mod = String(r.cashin || r.modality || "").toLowerCase().trim();
+      keys.forEach((k) => {
+        if (!map.has(k)) map.set(k, new Set<string>());
+        if (mod) map.get(k)!.add(mod);
+      });
+    });
+    return map;
+  }, [data]);
+
+  const userHasBothModalities = (r: CmsWalletRow) => {
+    const keys = [r.email, r.prosperId, r.userId]
+      .filter(Boolean)
+      .map((k) => String(k).toLowerCase().trim());
+    return keys.some((k) => {
+      const set = userModalitiesMap.get(k);
+      return set ? set.size >= 2 || (set.has("end") && set.has("month")) : false;
+    });
+  };
+
+  const hasAnyPendingActions = useMemo(() => {
+    return items.some((r) => !userHasBothModalities(r));
+  }, [items, userModalitiesMap]);
 
   const pageItems = useMemo(
     () => items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
@@ -424,21 +470,21 @@ function WalletsTab({ base, onRequestCashin, allowManualCashin }:
                 <th className="px-3 py-2">{t("wallets.col_modality")}</th>
                 <th className="px-3 py-2">{t("wallets.col_wallet")}</th>
                 <th className="px-3 py-2">{t("wallets.col_integration")}</th>
-                {allowManualCashin && (
+                {hasAnyPendingActions && (
                   <th className="px-3 py-2 text-right">{t("wallets.col_actions")}</th>
                 )}
               </tr>
             </thead>
             <tbody>
               {pageItems.map((r, i) => (
-                <tr key={`${r.address}-${i}`}
+                <tr key={`${r.address}-${r.cashin || r.modality || i}`}
                     className="border-b border-[rgb(var(--border))] last:border-0 hover:bg-[rgb(var(--surface-hover))]"
                     data-testid={`staking-wallet-row-${i}`}>
                   <td className="px-3 py-2 font-mono text-xs">{r.prosperId || r.userId || "—"}</td>
                   <td className="px-3 py-2 text-xs">{r.email || "—"}</td>
                   <td className="px-3 py-2">
-                    <Badge tone={r.cashin === "month" ? "info" : "default"} size="sm">
-                      {r.cashin || "—"}
+                    <Badge tone={(r.cashin || r.modality) === "month" ? "info" : "default"} size="sm">
+                      {(r.cashin || r.modality) || "—"}
                     </Badge>
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">
@@ -457,16 +503,18 @@ function WalletsTab({ base, onRequestCashin, allowManualCashin }:
                     ) : "—"}
                   </td>
                   <td className="px-3 py-2 text-xs text-[rgb(var(--fg-muted))]">{r.integration || "—"}</td>
-                  {allowManualCashin && (
+                  {hasAnyPendingActions && (
                     <td className="px-3 py-2 text-right">
-                      <button
-                        onClick={() => onRequestCashin(String(r.email || r.prosperId || r.userId || ""))}
-                        disabled={!(r.email || r.prosperId || r.userId)}
-                        className="inline-flex items-center gap-1 rounded-md border border-[rgb(var(--border))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--surface-hover))] disabled:opacity-40"
-                        title={t("wallets.new_request_title")}
-                        data-testid={`staking-wallet-cashin-btn-${i}`}>
-                        <Plus size={11} /> {t("wallets.new_request")}
-                      </button>
+                      {!userHasBothModalities(r) && (
+                        <button
+                          onClick={() => onRequestCashin(String(r.email || r.prosperId || r.userId || ""))}
+                          disabled={!(r.email || r.prosperId || r.userId)}
+                          className="inline-flex items-center gap-1 rounded-md border border-[rgb(var(--border))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--surface-hover))] disabled:opacity-40"
+                          title={t("wallets.new_request_title")}
+                          data-testid={`staking-wallet-cashin-btn-${i}`}>
+                          <Plus size={11} /> {t("wallets.new_request")}
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -488,44 +536,126 @@ function WalletsTab({ base, onRequestCashin, allowManualCashin }:
 function NewCashinTab({ base, onCreated, initialProsperId }:
   { base: string; onCreated: () => void; initialProsperId?: string }) {
   const t = useTranslations("staking");
+  const isClientMode = base.includes("client");
+  const { data: emailsData, mutate: mutateEmails } = useSWR<EmailsResp>(`${base}/emails`, fetcher);
+  const { data: walletsData } = useSWR<CmsWalletsResp>(`${base}/cms/wallets`, fetcher);
+
   const [email, setEmail] = useState(initialProsperId || "");
   const [modality, setModality] = useState<"end" | "month">("end");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<CashinResp | null>(null);
-  const { data: emailsData } = useSWR<{ emails: string[] }>(`${base}/emails`, fetcher);
-  const { data: walletsData } = useSWR<CmsWalletsResp>(`${base}/cms/wallets`, fetcher);
+
+  // In client mode, auto-prefill user email from emails endpoint
+  useEffect(() => {
+    if (isClientMode && emailsData?.emails?.length && !email) {
+      setEmail(emailsData.emails[0]);
+    }
+  }, [isClientMode, emailsData, email]);
+
   const emailOptions = useMemo(() => {
     const set = new Set<string>(emailsData?.emails || []);
+    (emailsData?.items || []).forEach((u) => { if (u.email) set.add(String(u.email).toLowerCase()); });
     (walletsData?.items || []).forEach((w) => { if (w.email) set.add(String(w.email).toLowerCase()); });
     return Array.from(set).sort();
   }, [emailsData, walletsData]);
 
+  const activeEmail = email || (isClientMode ? (emailsData?.emails?.[0] || "") : "");
+
+  // Resolve selected user doc
+  const selectedUser = useMemo<UserOption | null>(() => {
+    const mail = activeEmail.trim().toLowerCase();
+    if (!mail) return null;
+    const item = (emailsData?.items || []).find(
+      (u) => u.email.toLowerCase() === mail || u.org_id.toLowerCase() === mail
+    );
+    if (item) return item;
+
+    // Fallback: reconstruct from walletsData if present
+    const matchingWallets = (walletsData?.items || []).filter(
+      (w) =>
+        String(w.email || "").toLowerCase() === mail ||
+        String(w.prosperId || "").toLowerCase() === mail ||
+        String(w.userId || "").toLowerCase() === mail
+    );
+    if (matchingWallets.length > 0) {
+      return {
+        email: matchingWallets[0].email || mail,
+        org_id: String(matchingWallets[0].prosperId || matchingWallets[0].userId || mail),
+        prosper_wallets: matchingWallets.map((w) => ({
+          modality: w.cashin,
+          address: w.address,
+        })),
+      };
+    }
+    return null;
+  }, [activeEmail, emailsData, walletsData]);
+
+  // Read wallets from selectedUser
+  const existingWallets = useMemo(() => {
+    return selectedUser?.prosper_wallets || [];
+  }, [selectedUser]);
+
+  const hasEnd = useMemo(() => {
+    return existingWallets.some((w) => w.modality === "end" && Boolean(w.address));
+  }, [existingWallets]);
+
+  const hasMonth = useMemo(() => {
+    return existingWallets.some((w) => w.modality === "month" && Boolean(w.address));
+  }, [existingWallets]);
+
+  // If user has 2 or more wallets or both modalities configured
+  const hasBothModalities = existingWallets.length >= 2 || (hasEnd && hasMonth);
+
+  // Auto-switch modality if current one is already provisioned
+  useMemo(() => {
+    if (hasEnd && !hasMonth && modality === "end") {
+      setModality("month");
+    } else if (hasMonth && !hasEnd && modality === "month") {
+      setModality("end");
+    }
+  }, [hasEnd, hasMonth, modality]);
+
   const submit = async () => {
-    const mail = email.trim();
+    const mail = activeEmail.trim();
     if (!mail || !mail.includes("@")) { toast.error(t("cashin.email_required")); return; }
+    if (hasBothModalities) {
+      toast.error(t("cashin.all_modalities_configured"));
+      return;
+    }
     setBusy(true);
     setResult(null);
     try {
+      const targetOrgId = selectedUser?.org_id || mail;
       const r = await api<CashinResp>(`${base}/cms/cashin`, {
         method: "POST",
-        body: JSON.stringify({ email: mail, modality }),
+        body: JSON.stringify({ org_id: targetOrgId, email: mail, modality }),
       });
       setResult(r);
       toast.success(r.reused ? t("cashin.success_reused") : t("cashin.success_created"));
+      mutateEmails();
       onCreated();
     } catch (e: any) {
       toast.error(e?.message || t("cashin.failed"));
     } finally { setBusy(false); }
   };
 
-  const modBtn = (m: "end" | "month", label: string, desc: string) => (
-    <button type="button" onClick={() => setModality(m)}
+  const modBtn = (m: "end" | "month", label: string, desc: string, alreadyHas: boolean) => (
+    <button type="button"
+            onClick={() => !alreadyHas && setModality(m)}
+            disabled={alreadyHas}
             className={`flex-1 rounded-lg border p-3 text-left transition-colors ${
-              modality === m
-                ? "border-[#2B6BFF] bg-[color-mix(in_srgb,#2B6BFF_8%,transparent)]"
-                : "border-[rgb(var(--border))] hover:bg-[rgb(var(--surface-hover))]"}`}
+              alreadyHas
+                ? "border-[rgb(var(--border))] opacity-60 cursor-not-allowed bg-[rgb(var(--surface-hover))]"
+                : modality === m
+                  ? "border-[#2B6BFF] bg-[color-mix(in_srgb,#2B6BFF_8%,transparent)]"
+                  : "border-[rgb(var(--border))] hover:bg-[rgb(var(--surface-hover))]"}`}
             data-testid={`staking-cashin-modality-${m}`}>
-      <p className="text-sm font-medium">{label}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">{label}</p>
+        {alreadyHas && (
+          <Badge tone="default" size="sm">{t("cashin.modality_already_configured")}</Badge>
+        )}
+      </div>
       <p className="text-[11px] text-[rgb(var(--fg-muted))] mt-0.5">{desc}</p>
     </button>
   );
@@ -539,30 +669,88 @@ function NewCashinTab({ base, onCreated, initialProsperId }:
       <label className="block text-xs uppercase tracking-wider text-[rgb(var(--fg-muted))] mb-1.5">
         {t("cashin.email_label")}
       </label>
-      <input value={email} onChange={(e) => setEmail(e.target.value)}
-             type="email"
-             list="staking-cashin-email-options"
-             placeholder={t("cashin.email_placeholder")}
-             className="w-full rounded-md border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm font-mono mb-4"
-             data-testid="staking-cashin-prosperid" />
-      <datalist id="staking-cashin-email-options" data-testid="staking-cashin-email-options">
-        {emailOptions.map((e) => <option key={e} value={e} />)}
-      </datalist>
+      {isClientMode ? (
+        <div className="mb-4">
+          <input
+            value={email || emailsData?.emails?.[0] || ""}
+            readOnly
+            className="w-full rounded-md border border-[rgb(var(--border))] bg-[rgb(var(--surface-hover))] px-3 py-2 text-sm font-mono cursor-default text-[rgb(var(--fg))] focus:outline-none select-all"
+            data-testid="staking-cashin-prosperid"
+          />
+        </div>
+      ) : (
+        <div className="mb-4">
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            list="staking-cashin-email-options"
+            placeholder={t("cashin.email_placeholder")}
+            className="w-full rounded-md border border-[rgb(var(--border))] bg-[rgb(var(--surface))] px-3 py-2 text-sm font-mono"
+            data-testid="staking-cashin-prosperid"
+          />
+          <datalist id="staking-cashin-email-options" data-testid="staking-cashin-email-options">
+            {emailOptions.map((e) => <option key={e} value={e} />)}
+          </datalist>
+        </div>
+      )}
 
-      <label className="block text-xs uppercase tracking-wider text-[rgb(var(--fg-muted))] mb-1.5">
-        {t("cashin.modality_label")}
-      </label>
-      <div className="flex gap-3 mb-5">
-        {modBtn("end", t("cashin.mod_end_label"), t("cashin.mod_end_desc"))}
-        {modBtn("month", t("cashin.mod_month_label"), t("cashin.mod_month_desc"))}
-      </div>
+      {hasBothModalities ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 mb-5" data-testid="staking-cashin-both-modalities">
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-medium text-sm">
+            <CheckCircle2 size={16} />
+            <p>{t("cashin.all_modalities_configured")}</p>
+          </div>
+          <p className="text-xs text-[rgb(var(--fg-muted))] mt-1.5 mb-3">
+            {t("cashin.already_configured_notice")}
+          </p>
+          <div className="space-y-2">
+            {existingWallets.map((w, idx) => (
+              <div key={`${w.address}-${idx}`} className="rounded border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-2.5 text-xs flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Badge tone={w.modality === "month" ? "info" : "default"} size="sm">
+                    {w.modality}
+                  </Badge>
+                  <span className="font-mono text-[11px] text-[rgb(var(--fg))]">
+                    {w.address ? short(w.address, 10, 10) : "—"}
+                  </span>
+                </div>
+                {w.address && (
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => copyText(w.address!, t("copied", { label: t("wallet") }))}
+                            className="text-[rgb(var(--fg-muted))] hover:text-[rgb(var(--fg))]"
+                            title={t("wallets.copy")}>
+                      <Copy size={12} />
+                    </button>
+                    <a href={`${EXPERT}/account/${w.address}`} target="_blank" rel="noreferrer"
+                       className="text-[rgb(var(--fg-muted))] hover:text-[rgb(var(--fg))]"
+                       title={t("wallets.view_expert")}>
+                      <ExternalLink size={12} />
+                    </a>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          <label className="block text-xs uppercase tracking-wider text-[rgb(var(--fg-muted))] mb-1.5">
+            {t("cashin.modality_label")}
+          </label>
+          <div className="flex gap-3 mb-5">
+            {modBtn("end", t("cashin.mod_end_label"), t("cashin.mod_end_desc"), hasEnd)}
+            {modBtn("month", t("cashin.mod_month_label"), t("cashin.mod_month_desc"), hasMonth)}
+          </div>
 
-      <button onClick={submit} disabled={busy}
-              className="inline-flex items-center gap-2 rounded-md bg-[#2B6BFF] text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50"
-              data-testid="staking-cashin-submit">
-        {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-        {t("cashin.submit")}
-      </button>
+          <button onClick={submit} disabled={busy || (modality === "end" && hasEnd) || (modality === "month" && hasMonth)}
+                  className="inline-flex items-center gap-2 rounded-md bg-[#2B6BFF] text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-50"
+                  data-testid="staking-cashin-submit">
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            {t("cashin.submit")}
+          </button>
+        </>
+      )}
 
       {result && (
         <div className="mt-5 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--surface))] p-4"
