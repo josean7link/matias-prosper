@@ -2456,3 +2456,15 @@ trackeado). `gc.auto=0` ya seteado. Si mongo cae en FATAL: borrar
   (hot-reload race). SIEMPRE verificar con grep tras editar server.py/real.py.
 - Verificado E2E simulando el entorno del tester (RESEND_API_KEY con key inválida):
   dev-login 303 ✓, dev_otp presente ✓, banner + código prellenado ✓, Verify → /client ✓.
+
+## 2026-08 — Staking Cash-in: Envío de `users.org_id` y Límite de 2 Modalidades
+- **Identificador enviado al Backend/CMS**:
+  - En la interfaz visual (front), se muestra y busca por el **email** del usuario para facilidad operativa.
+  - Sin embargo, lo que se envía al backend y al CMS (`user_reference_id` / `prosperId`) es **`users.org_id`** (la organización a la que pertenece el usuario).
+  - Backend endpoints (`/admin/prosper/cms/cashin` y `/client/staking/cms/cashin`) aceptan `org_id` (con fallback de resolución por email a `users.org_id`).
+- **Límite de Modalidades (`organizations.prosper_wallets`)**:
+  - Las únicas 2 modalidades posibles son `'end'` (al final) y `'month'` (mes a mes).
+  - La pantalla/formulario de nueva solicitud de cash-in solo está disponible si `organizations.prosper_wallets` tiene **menos de 2 elementos**.
+  - Si el usuario/organización ya tiene 2 wallets (o ya tiene ambas modalidades registradas), la pantalla muestra un mensaje informativo indicando que el usuario ya tiene ambas modalidades disponibles y bloquea la creación de solicitudes adicionales.
+  - Al crearse una nueva wallet, el backend persiste el registro en `organizations.prosper_wallets` en MongoDB.
+

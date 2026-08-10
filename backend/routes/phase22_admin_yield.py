@@ -524,24 +524,102 @@ async def stakings_payload(*, scope: str = "all",
     if scope in ("all", "external"):
         external = await _fetch({**base, "external": True})
 
-    # Group ours by org for the UI.
+    # Build wallet -> client_email, org_id -> client_email, and user_id -> email
+    # mappings to ensure we display the client's email instead of prosper admin email.
+    all_rows = ours + external
+    all_org_ids = {p["org_id"] for p in all_rows if p.get("org_id")}
+    all_wallets = {str(p.get("wallet")).strip().lower() for p in all_rows if p.get("wallet")}
+    all_user_ids = {p["user_id"] for p in all_rows if p.get("user_id")}
+
+    org_to_email: dict[str, str] = {}
+    wallet_to_email: dict[str, str] = {}
+    wallet_to_org: dict[str, str] = {}
+    user_to_email: dict[str, str] = {}
+
+    # 1. Look up users by user_id or org_id
+    user_or: list[dict] = []
+    if all_user_ids:
+        user_or.append({"user_id": {"$in": list(all_user_ids)}})
+    if all_org_ids:
+        user_or.append({"org_id": {"$in": list(all_org_ids)}})
+
+    if user_or:
+        u_query = {"$or": user_or} if len(user_or) > 1 else user_or[0]
+        u_cursor = col(USERS).find(
+            {**u_query, "is_deleted": {"$ne": True}},
+            {"_id": 0, "user_id": 1, "email": 1, "org_id": 1, "role": 1})
+        async for u in u_cursor:
+            u_mail = str(u.get("email") or "").strip().lower()
+            if not u_mail:
+                continue
+            if u.get("user_id"):
+                user_to_email[u["user_id"]] = u_mail
+            u_org = u.get("org_id")
+            if u_org:
+                if u_org not in org_to_email or u.get("role") == "client_admin":
+                    org_to_email[u_org] = u_mail
+
+    # 2. Look up organizations by org_id or prosper_wallets/stellar_address
+    org_or: list[dict] = []
+    if all_org_ids:
+        org_or.append({"org_id": {"$in": list(all_org_ids)}})
+    if all_wallets:
+        org_or.append({"prosper_wallets.address": {"$in": list(all_wallets)}})
+        org_or.append({"stellar_address": {"$in": list(all_wallets)}})
+
     by_org: dict[str, dict] = {}
-    org_ids = {p["org_id"] for p in ours if p.get("org_id")}
-    if org_ids:
-        cursor = col(ORGANIZATIONS).find(
-            {"org_id": {"$in": list(org_ids)}},
-            {"_id": 0, "org_id": 1, "commercial_name": 1, "legal_name": 1})
-        async for o in cursor:
-            by_org[o["org_id"]] = {
-                "org_id":           o["org_id"],
+    if org_or:
+        o_query = {"$or": org_or} if len(org_or) > 1 else org_or[0]
+        o_cursor = col(ORGANIZATIONS).find(o_query, {
+            "_id": 0, "org_id": 1, "commercial_name": 1, "legal_name": 1,
+            "primary_email": 1, "contact_email": 1, "prosper_wallets": 1, "stellar_address": 1,
+        })
+        async for o in o_cursor:
+            oid = o["org_id"]
+            o_mail = str(o.get("primary_email") or o.get("contact_email") or "").strip().lower()
+            if o_mail:
+                org_to_email[oid] = o_mail
+            for w in (o.get("prosper_wallets") or []):
+                w_addr = str(w.get("address") or "").strip().lower()
+                if w_addr:
+                    wallet_to_org[w_addr] = oid
+                    if w.get("email"):
+                        wallet_to_email[w_addr] = str(w["email"]).strip().lower()
+            if o.get("stellar_address"):
+                s_addr = str(o["stellar_address"]).strip().lower()
+                wallet_to_org[s_addr] = oid
+            by_org[oid] = {
+                "org_id":           oid,
                 "name":             o.get("commercial_name")
-                                       or o.get("legal_name") or o["org_id"],
+                                       or o.get("legal_name") or oid,
                 "positions":        [],
                 "principal_arsa":   0.0,
                 "principal_usdc":   0.0,
                 "active_count":     0,
             }
+
+    def _enrich_position(p: dict) -> None:
+        client_mail = None
+        if p.get("user_id") and p["user_id"] in user_to_email:
+            client_mail = user_to_email[p["user_id"]]
+        if not client_mail and p.get("wallet"):
+            w_addr = str(p["wallet"]).strip().lower()
+            client_mail = wallet_to_email.get(w_addr)
+            if not client_mail:
+                matched_org = wallet_to_org.get(w_addr) or p.get("org_id")
+                if matched_org and matched_org in org_to_email:
+                    client_mail = org_to_email[matched_org]
+        if not client_mail and p.get("org_id") and p["org_id"] in org_to_email:
+            client_mail = org_to_email[p["org_id"]]
+
+        if client_mail:
+            p["client_email"] = client_mail
+            p["contract_email"] = client_mail
+        elif not p.get("client_email"):
+            p["client_email"] = p.get("contract_email")
+
     for p in ours:
+        _enrich_position(p)
         oid = p.get("org_id")
         if not oid:
             continue
@@ -556,6 +634,8 @@ async def stakings_payload(*, scope: str = "all",
             g["principal_usdc"] += amt
         if p.get("status") == "active":
             g["active_count"] += 1
+
+    # External positions (e.g. from 'alfred' or third parties) remain unchanged per spec.
 
     return {
         "ours": {
@@ -683,10 +763,8 @@ async def reconcile_prosper_wallets(
 # the Prosper CMS is the backend of record, formatting happens client-side)
 # ===========================================================================
 
-@router.get("/cms/wallets")
-async def list_cms_wallets(user: CurrentUser = Depends(get_current_user)):
-    """Raw list of CMS-registered users/wallets (`GET /cms/users`)."""
-    _require_read(user)
+async def cms_wallets_payload() -> dict:
+    """Raw list of CMS-registered users/wallets, enriched with local client emails and org prosper_wallets."""
     import os
     from integrations.prosper import get_adapter, ProsperError
     adapter = get_adapter()
@@ -696,24 +774,152 @@ async def list_cms_wallets(user: CurrentUser = Depends(get_current_user)):
     try:
         data = await fn()
     except ProsperError as e:
-        raise HTTPException(502, f"CMS users read failed: {e}")
-    items = data.get("items", [])
-    return {"items":      items,
+        data = {"items": []}
+    items = list(data.get("items") or [])
+
+    # Query all organizations with prosper_wallets or stellar_address
+    orgs_cursor = col(ORGANIZATIONS).find(
+        {"$or": [
+            {"prosper_wallets": {"$exists": True, "$ne": []}},
+            {"stellar_address": {"$exists": True, "$ne": None}}
+        ], "is_deleted": {"$ne": True}},
+        {"_id": 0, "org_id": 1, "prosper_id": 1, "primary_email": 1, "contact_email": 1,
+         "prosper_wallets": 1, "stellar_address": 1, "commercial_name": 1, "legal_name": 1}
+    )
+    orgs = await orgs_cursor.to_list(1000)
+
+    org_ids = [o["org_id"] for o in orgs if o.get("org_id")]
+    org_email_map: dict[str, str] = {}
+    wallet_email_map: dict[str, str] = {}
+
+    for o in orgs:
+        oid = o["org_id"]
+        pid = o.get("prosper_id") or oid
+        mail = str(o.get("primary_email") or o.get("contact_email") or "").strip().lower()
+        if mail:
+            org_email_map[oid] = mail
+            org_email_map[pid] = mail
+        for w in (o.get("prosper_wallets") or []):
+            w_addr = str(w.get("address") or "").strip().lower()
+            if w_addr:
+                w_mail = w.get("email") or mail
+                if w_mail:
+                    wallet_email_map[w_addr] = str(w_mail).strip().lower()
+        if o.get("stellar_address"):
+            s_addr = str(o["stellar_address"]).strip().lower()
+            if mail:
+                wallet_email_map[s_addr] = mail
+
+    if org_ids:
+        u_cursor = col(USERS).find(
+            {"org_id": {"$in": org_ids}, "is_deleted": {"$ne": True}},
+            {"_id": 0, "org_id": 1, "email": 1, "role": 1}
+        )
+        async for u in u_cursor:
+            u_mail = str(u.get("email") or "").strip().lower()
+            if u_mail:
+                u_org = u["org_id"]
+                if u_org not in org_email_map or u.get("role") == "client_admin":
+                    org_email_map[u_org] = u_mail
+
+    seen_addr_mod: set[str] = set()
+    enriched_items: list[dict] = []
+
+    for it in items:
+        w_addr = str(it.get("address") or "").strip()
+        pid = str(it.get("prosperId") or it.get("userId") or "").strip()
+        mod = str(it.get("cashin") or it.get("modality") or "").strip().lower()
+        client_mail = wallet_email_map.get(w_addr.lower()) or org_email_map.get(pid)
+        current_email = str(it.get("email") or "").strip().lower()
+        if client_mail and (not current_email or "admin@prosper" in current_email or "prosper@cms" in current_email or "@prosper" in current_email):
+            it["email"] = client_mail
+        if w_addr:
+            seen_addr_mod.add(f"{w_addr.lower()}_{mod}")
+        enriched_items.append(it)
+
+    # Merge any wallets from organizations.prosper_wallets that are not in enriched_items
+    for o in orgs:
+        oid = o["org_id"]
+        mail = org_email_map.get(oid) or str(o.get("primary_email") or o.get("contact_email") or "")
+        wallets = list(o.get("prosper_wallets") or [])
+        for w in wallets:
+            w_addr = str(w.get("address") or "").strip()
+            w_mod = str(w.get("modality") or "end").strip().lower()
+            if not w_addr:
+                continue
+            key = f"{w_addr.lower()}_{w_mod}"
+            if key in seen_addr_mod:
+                continue
+            seen_addr_mod.add(key)
+            enriched_items.append({
+                "prosperId": oid,
+                "userId": oid,
+                "email": mail,
+                "address": w_addr,
+                "cashin": w_mod,
+                "modality": w_mod,
+                "integration": "prosper",
+                "source": w.get("source") or "organizations.prosper_wallets",
+                "createdAt": w.get("provisioned_at") or _iso(),
+            })
+
+    return {"items":      enriched_items,
              "raw":        data.get("raw"),
-             "total":      len(items),
+             "total":      len(enriched_items),
              "mode":       os.environ.get("PROSPER_MODE", "mock"),
              "fetched_at": _iso()}
 
 
+@router.get("/cms/wallets")
+async def list_cms_wallets(user: CurrentUser = Depends(get_current_user)):
+    """Raw list of CMS-registered users/wallets (`GET /cms/users`)."""
+    _require_read(user)
+    return await cms_wallets_payload()
+
+
 async def emails_payload() -> dict:
-    """Portal client emails for the cash-in dropdown (shared helper)."""
+    """Portal client emails and org info for the cash-in dropdown (shared helper)."""
     rows = await col(USERS).find(
         {"email": {"$exists": True, "$ne": None},
-         "role":  {"$regex": "^client"}},
-        {"_id": 0, "email": 1}).to_list(2000)
-    emails = sorted({str(r["email"]).strip().lower()
-                      for r in rows if r.get("email")})
-    return {"emails": emails, "total": len(emails)}
+         "role":  {"$regex": "^client"},
+         "is_deleted": {"$ne": True}},
+        {"_id": 0, "email": 1, "org_id": 1, "user_id": 1, "first_name": 1, "last_name": 1}).to_list(2000)
+    
+    org_ids = list({r.get("org_id") for r in rows if r.get("org_id")})
+    org_map: dict[str, dict] = {}
+    if org_ids:
+        o_cursor = col(ORGANIZATIONS).find(
+            {"org_id": {"$in": org_ids}, "is_deleted": {"$ne": True}},
+            {"_id": 0, "org_id": 1, "prosper_wallets": 1, "commercial_name": 1, "legal_name": 1}
+        )
+        async for o in o_cursor:
+            org_map[o["org_id"]] = o
+
+    items = []
+    emails_set = set()
+    for u in rows:
+        mail = str(u.get("email") or "").strip().lower()
+        if not mail:
+            continue
+        emails_set.add(mail)
+        oid = u.get("org_id")
+        org_doc = org_map.get(oid) if oid else None
+        name_parts = [u.get("first_name"), u.get("last_name")]
+        user_name = " ".join([p for p in name_parts if p]).strip()
+        org_name = (org_doc.get("commercial_name") or org_doc.get("legal_name")) if org_doc else ""
+        label_name = org_name or user_name or mail
+        wallets = list(org_doc.get("prosper_wallets") or []) if org_doc else []
+        items.append({
+            "email": mail,
+            "org_id": oid or mail,
+            "user_id": u.get("user_id"),
+            "name": label_name,
+            "prosper_wallets": wallets,
+        })
+
+    items.sort(key=lambda x: x["email"])
+    emails = sorted(list(emails_set))
+    return {"emails": emails, "items": items, "total": len(items)}
 
 
 @router.get("/emails")
@@ -756,6 +962,7 @@ async def create_cms_account(body: CmsCreateUserBody,
 class CmsCashinBody(BaseModel):
     email: str | None = Field(None, min_length=3, max_length=254)
     prosper_id: str | None = Field(None, min_length=1, max_length=128)
+    org_id: str | None = Field(None, min_length=1, max_length=128)
     modality: str = Field(..., pattern="^(end|month)$")
     asset: str | None = Field(None, pattern="^(arsa|usdc)$")
 
@@ -763,40 +970,97 @@ class CmsCashinBody(BaseModel):
 @router.post("/cms/cashin")
 async def create_cms_cashin(body: CmsCashinBody,
                              user: CurrentUser = Depends(get_current_user)):
-    """Create (or return existing) CMS wallet for (clientEmail, modality).
+    """Create (or return existing) CMS wallet for (org_id, modality).
 
-    Idempotent partner-side: same (email, cashin) returns the wallet
-    already provisioned. `asset` is NOT sent to the CMS (the partner API
-    has no currency field — the staked asset is defined by what gets
-    deposited); it is recorded locally for audit/instructions only.
+    In the CMS backend and internal accounting, the identifier sent as
+    `user_reference_id` is `users.org_id` (the organization ID). The user's
+    email is displayed on the frontend for human recognition.
+    
+    A maximum of 2 modalities ('end' and 'month') can exist per organization.
+    The wallet created is persisted to `organizations.prosper_wallets`.
     """
     _require_write(user)
     from integrations.prosper import get_adapter, ProsperError
-    prosper_id = (body.email or body.prosper_id or "").strip()
-    if not prosper_id:
-        raise HTTPException(422, "email is required")
+    
+    target_org_id = (body.org_id or "").strip()
+    client_email = (body.email or "").strip().lower()
+    
+    if not target_org_id and client_email:
+        u = await col(USERS).find_one(
+            {"email": client_email, "is_deleted": {"$ne": True}},
+            {"_id": 0, "org_id": 1}
+        )
+        if u and u.get("org_id"):
+            target_org_id = u["org_id"]
+    
+    if not target_org_id:
+        target_org_id = (body.prosper_id or client_email or "").strip()
+        
+    if not target_org_id:
+        raise HTTPException(422, "org_id or email is required")
+
+    org_doc = await col(ORGANIZATIONS).find_one(
+        {"$or": [{"org_id": target_org_id}, {"prosper_id": target_org_id}]},
+        {"_id": 0, "org_id": 1, "prosper_wallets": 1}
+    )
+    if org_doc:
+        existing_wallets = list(org_doc.get("prosper_wallets") or [])
+        existing_m = next((w for w in existing_wallets if w.get("modality") == body.modality), None)
+        if existing_m and existing_m.get("address"):
+            return {
+                "prosper_id": target_org_id,
+                "org_id":     target_org_id,
+                "email":      client_email or target_org_id,
+                "modality":   body.modality,
+                "asset":      body.asset,
+                "address":    existing_m["address"],
+                "status":     "active",
+                "reused":     True,
+                "tx_hash":    existing_m.get("tx_hash"),
+                "raw":        existing_m.get("raw") or {},
+            }
+        if len(existing_wallets) >= 2:
+            raise HTTPException(400, "El usuario ya tiene ambas modalidades disponibles ('month' y 'end')")
+
     ptx = "adm_" + secrets.token_hex(8)
     try:
         w = await get_adapter().create_user_wallet(
-            user_reference_id=prosper_id,
+            user_reference_id=target_org_id,
             prosper_tx_id=ptx,
             modality=body.modality)
     except ProsperError as e:
         raise HTTPException(502, f"CMS cashin failed: {e}")
     reused = bool((w.raw or {}).get("reused"))
+    
+    if org_doc and w.address:
+        w_entry = {
+            "modality":        body.modality,
+            "address":         w.address,
+            "prosper_user_id": str(target_org_id),
+            "provisioned_at":  _iso(),
+            "source":          "cms_cashin",
+        }
+        updated_wallets = [x for x in (org_doc.get("prosper_wallets") or []) if x.get("modality") != body.modality]
+        updated_wallets.append(w_entry)
+        await col(ORGANIZATIONS).update_one(
+            {"org_id": org_doc["org_id"]},
+            {"$set": {"prosper_wallets": updated_wallets, "updated_at": _iso()}}
+        )
+
     await log_action(
         actor=user, action="admin.prosper.cms.cashin",
-        resource_type="prosper_wallet", resource_id=prosper_id,
-        metadata={"modality": body.modality, "asset": body.asset,
-                   "address": w.address, "status": w.status,
-                   "reused": reused, "prosper_tx_id": ptx})
-    return {"prosper_id": prosper_id,
-             "email":      prosper_id,
-             "modality":   body.modality,
-             "asset":      body.asset,
-             "address":    w.address,
-             "status":     w.status,
-             "reused":     reused,
-             "tx_hash":    w.tx_hash,
-             "raw":        w.raw}
+        resource_type="prosper_wallet", resource_id=target_org_id,
+        metadata={"org_id": target_org_id, "modality": body.modality,
+                   "asset": body.asset, "address": w.address,
+                   "status": w.status, "reused": reused, "prosper_tx_id": ptx})
+    return {"prosper_id": target_org_id,
+            "org_id":     target_org_id,
+            "email":      client_email or target_org_id,
+            "modality":   body.modality,
+            "asset":      body.asset,
+            "address":    w.address,
+            "status":     w.status,
+            "reused":     reused,
+            "tx_hash":    w.tx_hash,
+            "raw":        w.raw}
 

@@ -787,14 +787,18 @@
       "mod_month_label": "month · Monthly",
       "mod_month_desc": "Earnings settled monthly with a 24h pause to decide withdrawal or reinvestment.",
       "submit": "Create cash-in request",
-      "success_reused": "Wallet already exists for that email + modality",
+      "success_reused": "Wallet already exists for that client + modality",
       "success_created": "Cash-in request created — wallet assigned",
       "failed": "Cash-in request failed",
       "wallet_reused": "Existing wallet",
       "wallet_assigned": "Wallet assigned",
       "result_meta": "email {email} · modality {modality}",
       "address_pending": "(pending — retry the wallets listing)",
-      "instructions": "Instruction for the client: transfer USDC or ARSa (Stellar network) to this wallet to start staking."
+      "instructions": "Instruction for the client: transfer USDC or ARSa (Stellar network) to this wallet to start staking.",
+      "all_modalities_configured": "The user already has both modalities available ('month' and 'end').",
+      "already_configured_notice": "This client already has both settlement modalities registered ('month' and 'end'). You can view or copy their wallets below.",
+      "existing_wallets_title": "Wallets assigned to the user",
+      "modality_already_configured": "Already configured"
     },
     "treasury": {
       "usdc": "Treasury · USDC",

@@ -73,6 +73,10 @@ class MockProsperAdapter(ProsperAdapter):
     async def create_cms_user(self, *, email: str) -> dict:
         return {"user_id": abs(hash(email)) % 100000, "raw": {"mock": True}}
 
+    async def get_staking_records(self, *, owner_address: str | None = None,
+                                  email: str | None = None) -> list[dict]:
+        return []
+
     async def _ensure_wallet(self, user_ref: str) -> None:
         if user_ref not in _WALLETS:
             await self.create_user_wallet(

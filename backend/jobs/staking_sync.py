@@ -50,7 +50,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from db import ALERTS, ORGANIZATIONS, POSITIONS, STAKING_SYNC_RUNS, col
+from db import ALERTS, ORGANIZATIONS, POSITIONS, STAKING_SYNC_RUNS, USERS, col
 from integrations.prosper import ProsperError, get_adapter as prosper_adapter
 
 logger = logging.getLogger("prosper.staking_sync")
@@ -84,27 +84,54 @@ def _to_float(value: Any) -> float:
 # Wallet → org index. Built once per run; small N (one per org × modality).
 # ---------------------------------------------------------------------------
 async def _wallet_index() -> dict[str, dict]:
-    """Return {address.lower(): {org_id, modality, prosper_user_id}}."""
+    """Return {address.lower(): {org_id, modality, prosper_user_id, client_email}}."""
     index: dict[str, dict] = {}
     cursor = col(ORGANIZATIONS).find(
         {"$or": [{"prosper_wallets": {"$exists": True, "$ne": []}},
                   {"stellar_address": {"$exists": True, "$ne": None}}]},
         {"_id": 0, "org_id": 1, "prosper_wallets": 1, "stellar_address": 1,
-         "prosper_cashin_modality": 1, "prosper_user_id": 1})
+         "prosper_cashin_modality": 1, "prosper_user_id": 1,
+         "primary_email": 1, "contact_email": 1})
+    orgs: list[dict] = []
+    org_ids: list[str] = []
     async for org in cursor:
+        orgs.append(org)
+        org_ids.append(org["org_id"])
+
+    # Pre-fetch client users to map org_id -> client_email
+    org_user_emails: dict[str, str] = {}
+    if org_ids:
+        u_cursor = col(USERS).find(
+            {"org_id": {"$in": org_ids}, "is_deleted": {"$ne": True}},
+            {"_id": 0, "org_id": 1, "email": 1, "role": 1})
+        async for u in u_cursor:
+            u_mail = str(u.get("email") or "").strip().lower()
+            if u_mail:
+                oid = u["org_id"]
+                if oid not in org_user_emails or u.get("role") == "client_admin":
+                    org_user_emails[oid] = u_mail
+
+    for org in orgs:
+        oid = org["org_id"]
+        client_email = (org.get("primary_email")
+                        or org.get("contact_email")
+                        or org_user_emails.get(oid))
         for w in (org.get("prosper_wallets") or []):
             addr = (w.get("address") or "").strip().lower()
             if addr:
-                index[addr] = {"org_id":   org["org_id"],
+                w_email = w.get("email") or client_email
+                index[addr] = {"org_id":   oid,
                                 "modality": w.get("modality"),
-                                "prosper_user_id": w.get("prosper_user_id")}
+                                "prosper_user_id": w.get("prosper_user_id"),
+                                "client_email": w_email}
         # Legacy singular fallback — only registered if not already mapped.
         legacy = (org.get("stellar_address") or "").strip().lower()
         if legacy and legacy not in index:
-            index[legacy] = {"org_id":   org["org_id"],
+            index[legacy] = {"org_id":   oid,
                               "modality": org.get("prosper_cashin_modality")
                                             or "end",
-                              "prosper_user_id": org.get("prosper_user_id")}
+                              "prosper_user_id": org.get("prosper_user_id"),
+                              "client_email": client_email}
     return index
 
 
@@ -217,8 +244,13 @@ async def _upsert_position(*, raw: dict, wallet_meta: dict) -> dict:
         set_doc["maturity"] = raw["maturityPrincipal"]
     if raw.get("contractoId"):
         set_doc["contract_id"] = raw["contractoId"]
-    if raw.get("email"):
+    resolved_client_email = wallet_meta.get("client_email") or raw.get("email")
+    if resolved_client_email:
+        set_doc["client_email"] = resolved_client_email
+        set_doc["contract_email"] = resolved_client_email
+    elif raw.get("email"):
         set_doc["contract_email"] = raw["email"]
+        set_doc["client_email"] = raw["email"]
     if raw.get("hashDeposito") and raw["hashDeposito"] != "N/A":
         set_doc["deposit_hash"] = raw["hashDeposito"]
     if raw.get("proyectado") is not None:
@@ -672,8 +704,13 @@ async def _create_new_after_ambiguous(*, raw: dict, wallet_meta: dict) -> bool:
         doc["maturity"] = raw["maturityPrincipal"]
     if raw.get("contractoId"):
         doc["contract_id"]    = raw["contractoId"]
-    if raw.get("email"):
+    resolved_client_email = wallet_meta.get("client_email") or raw.get("email")
+    if resolved_client_email:
+        doc["client_email"]   = resolved_client_email
+        doc["contract_email"] = resolved_client_email
+    elif raw.get("email"):
         doc["contract_email"] = raw["email"]
+        doc["client_email"]   = raw["email"]
     await col(POSITIONS).insert_one(doc)
     return True
 

@@ -57,6 +57,8 @@ class Organization(TimestampMixin):
     start_date: Optional[str] = None
     expected_aum_usd: Optional[float] = None
     internal_notes: Optional[str] = None
+    primary_email: Optional[str] = None
+    prosper_wallets: Optional[List[Dict[str, Any]]] = None
     # Phase 23 — N1/N2 hierarchy. N1 (parent_org_id=None, level=1) can create
     # exactly one tier of children (N2). N2 (parent_org_id=<n1>, level=2) is
     # a full org with its own KYB / ramp account / caps. Max depth = 2.
