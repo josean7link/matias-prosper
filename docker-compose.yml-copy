@@ -1,0 +1,75 @@
+version: "3.9"
+
+# Phase 0 — local dev stack. Run with: docker compose up -d
+# Then the API can talk to: mongo:27017, redis:6379, mailhog:1025.
+# In Kubernetes (preview / production) MongoDB is bundled separately.
+
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: prosper-api
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - DB_NAME=prosper_phase0
+      - REDIS_URL=redis://redis:6379/0
+      - CORS_ORIGINS=*
+      - JWT_SECRET=phase0-dev-secret-change-me
+      - RESEND_API_KEY=
+      - RESEND_FROM=onboarding@resend.dev
+      - COOKIE_SECURE=false
+      # Phase 13 — Ramp provider abstraction
+      - RAMP_PROVIDER=alfred
+      - RAMP_PROVIDER_MODE=mock
+      - ANDES_GATEWAY_URL=http://andes-gateway:8090
+      - GATEWAY_INTERNAL_TOKEN=dev-internal-token-change-me
+    ports: ["8001:8001"]
+    depends_on: [mongo, redis, mailhog, andes-gateway]
+
+  # Phase 13 — Node micro-service that wraps @andeslabs/mint-sdk.
+  # Phase 13 = skeleton only (health + 501 stubs). Phase 14 wires real calls.
+  andes-gateway:
+    build:
+      context: ./services/andes-gateway
+      dockerfile: Dockerfile
+    container_name: prosper-andes-gateway
+    environment:
+      - PORT=8090
+      - HOST=0.0.0.0
+      - GATEWAY_INTERNAL_TOKEN=dev-internal-token-change-me
+      - LOG_LEVEL=info
+    ports: ["8090:8090"]
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    container_name: prosper-mongo
+    volumes: ["./.data/mongo:/data/db"]
+    ports: ["27017:27017"]
+
+  redis:
+    image: redis:7-alpine
+    container_name: prosper-redis
+    ports: ["6379:6379"]
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: prosper-mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+
+  admin:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: prosper-admin
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://api:8001
+    ports: ["3000:3000"]
+    depends_on: [api]
