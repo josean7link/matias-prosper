@@ -27,7 +27,7 @@ require_compliance = requires_role(*_ROLES)
 # ---------------------------------------------------------------------------
 @router.get("/applications")
 async def list_applications(
-    status: Optional[str] = Query(None, regex="^(in_review|approved|rejected)$"),
+    status: Optional[str] = Query(None, pattern="^(in_review|approved|rejected)$"),
     limit: int = Query(50, ge=1, le=200),
     _: CurrentUser = Depends(require_compliance),
 ):
@@ -105,7 +105,7 @@ async def decide_application(
 # ---------------------------------------------------------------------------
 @router.get("/kyc-cases")
 async def list_kyc_cases(
-    status: Optional[str] = Query(None, regex="^(pending|in_review|approved|rejected)$"),
+    status: Optional[str] = Query(None, pattern="^(pending|in_review|approved|rejected)$"),
     limit: int = Query(50, ge=1, le=200),
     _: CurrentUser = Depends(require_compliance),
 ):

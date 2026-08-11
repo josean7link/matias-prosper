@@ -234,7 +234,7 @@ async def revenue_summary(_: CurrentUser = Depends(require_business)):
 # /revenue/breakdown — donut by concept + optional period filter
 # ---------------------------------------------------------------------------
 @router.get("/revenue/breakdown")
-async def revenue_breakdown(period: str = Query("all", regex="^(mtd|ytd|all)$"),
+async def revenue_breakdown(period: str = Query("all", pattern="^(mtd|ytd|all)$"),
                              _: CurrentUser = Depends(require_business)):
     now = datetime.now(timezone.utc)
     match: dict = {"is_deleted": False, "status": "confirmed"}

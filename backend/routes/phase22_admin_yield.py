@@ -477,10 +477,10 @@ async def get_cms_treasury(user: CurrentUser = Depends(get_current_user)):
 
 @router.get("/stakings")
 async def list_cms_stakings(
-        scope: str = Query("all", regex="^(all|ours|external)$"),
-        asset: Optional[str] = Query(None, regex="^(arsa|usdc)$"),
+        scope: str = Query("all", pattern="^(all|ours|external)$"),
+        asset: Optional[str] = Query(None, pattern="^(arsa|usdc)$"),
         status: Optional[str] = Query(None,
-            regex="^(active|matured|redeemed)$"),
+            pattern="^(active|matured|redeemed)$"),
         user: CurrentUser = Depends(get_current_user)):
     """Local view of CMS-synced stakings, grouped by ownership.
 

@@ -465,8 +465,11 @@ from fastapi import UploadFile, File, Form
 import httpx
 import pathlib
 
-KYC_DOCS_DIR = pathlib.Path("/app/backend/var/kyc_docs")
-KYC_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+KYC_DOCS_DIR = pathlib.Path(os.environ.get("KYC_DOCS_DIR", str(pathlib.Path(__file__).resolve().parent.parent / "var" / "kyc_docs")))
+try:
+    KYC_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 
 
 @router.post("/{app_id}/kyc-docs")

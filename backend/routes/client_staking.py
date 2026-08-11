@@ -15,10 +15,12 @@ admin routes with full visibility and mutation power (see
 from __future__ import annotations
 
 from typing import Optional
+from pydantic import BaseModel, Field
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth import CurrentUser, get_current_user
+from roles import Role, is_internal
 from db import col, ORGANIZATIONS, POSITIONS
 from integrations.prosper import get_adapter
 from routes.phase22_admin_yield import _iso, cms_wallets_payload
@@ -42,10 +44,10 @@ def _is_internal(user: CurrentUser) -> bool:
 
 @router.get("/stakings")
 async def client_list_stakings(
-        scope: str = Query("all", regex="^(all|ours|external)$"),
-        asset: Optional[str] = Query(None, regex="^(arsa|usdc)$"),
+        scope: str = Query("all", pattern="^(all|ours|external)$"),
+        asset: Optional[str] = Query(None, pattern="^(arsa|usdc)$"),
         status: Optional[str] = Query(None,
-            regex="^(active|matured|redeemed)$"),
+            pattern="^(active|matured|redeemed)$"),
         user: CurrentUser = Depends(get_current_user)):
     """Return stakings strictly scoped to the logged-in client organization/user."""
     user_wallets: set[str] = set()

@@ -79,14 +79,20 @@ def get_client() -> AsyncIOMotorClient:
     global _client
     if _client is None:
         url = os.environ["MONGO_URL"]
-        # mongodb+srv:// handles TLS automatically via DNS SRV.
-        # Passing tlsCAFile on top can conflict with Atlas on some OpenSSL
-        # builds — only inject it for plain mongodb:// connections.
-        if url.startswith("mongodb+srv://"):
-            _client = AsyncIOMotorClient(url)
-        else:
-            import certifi
-            _client = AsyncIOMotorClient(url, tlsCAFile=certifi.where())
+        kwargs = {}
+        # Only configure TLS/CA if TLS/SSL is explicitly requested or required
+        has_tls = (
+            "tls=true" in url.lower()
+            or "ssl=true" in url.lower()
+            or os.environ.get("MONGO_TLS", "").lower() in ("1", "true", "yes")
+        )
+        if has_tls or url.startswith("mongodb+srv://"):
+            try:
+                import certifi
+                kwargs["tlsCAFile"] = certifi.where()
+            except ImportError:
+                pass
+        _client = AsyncIOMotorClient(url, **kwargs)
     return _client
 
 
