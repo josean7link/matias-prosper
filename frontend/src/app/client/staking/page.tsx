@@ -21,7 +21,7 @@ export default function ClientStakingPage() {
         subtitle={t("client_subtitle")}
         actions={<Coins size={20} className="text-[rgb(var(--fg-muted))]" />}
       />
-      <StakingTabs base="/v1/client/staking" allowManualCashin={false} />
+      <StakingTabs base="/v1/client/staking" allowManualCashin={true} />
     </div>
   );
 }
