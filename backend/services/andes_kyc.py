@@ -103,21 +103,18 @@ async def _release_lock(org_id: str, token: Optional[str]) -> None:
 
 
 def _validate_file(name: str, content: bytes) -> None:
-    """Basic file validation: size + magic bytes."""
-    if len(content) < 1024:
-        raise AndesKycError(422, f"El archivo '{name}' es muy pequeño "
-                                 f"(<1KB). Revisá la captura.")
-    if len(content) > 10 * 1024 * 1024:
-        raise AndesKycError(422, f"El archivo '{name}' supera 10 MB.")
-    head = content[:12]
-    is_jpeg = head[:3] == b"\xff\xd8\xff"
-    is_png  = head[:8] == b"\x89PNG\r\n\x1a\n"
-    is_pdf  = head[:4] == b"%PDF"
-    is_webp = head[:4] == b"RIFF" and head[8:12] == b"WEBP"
-    is_heic = head[4:12] in (b"ftypheic", b"ftypheix", b"ftyphevc", b"ftypmif1")
-    if not (is_jpeg or is_png or is_pdf or is_webp or is_heic):
-        raise AndesKycError(422, f"Formato de '{name}' no soportado. "
-                                 f"Usá JPG, PNG o PDF.")
+    """Legacy adapter — delegates to the public `file_validator` module.
+
+    Kept as an internal shim so the Andes KYC production path is not
+    reshuffled during Fase 0.5 (behaviour identical: same size limits,
+    same allowed types, same error text on failure).
+    """
+    from services.file_validator import validate_file, FileValidationError
+    try:
+        validate_file(name, content)
+    except FileValidationError as e:
+        # Preserve the original AndesKycError(422, ...) contract.
+        raise AndesKycError(422, str(e))
 
 
 async def submit_andes_kyc_docs(

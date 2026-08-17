@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Literal, Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from audit import log_action
@@ -24,12 +24,50 @@ def _sla_color(hours: float) -> str:
     return "green"
 
 
+def _legacy_retired_redirect(mode: str):
+    """F6: con el módulo nuevo encendido, la bandeja legacy se retira —
+    los GET redirigen (308) a los endpoints nuevos y las mutaciones
+    devuelven 410. Con el flag apagado, todo sigue exactamente como hoy.
+
+    F8-bugfix (R3/R4): las rutas por case_id sólo se retiran si el caso
+    pertenece al modelo nuevo (`verification_modes` presente). Casos
+    legacy (sin verification_modes) siguen respondiendo desde acá para
+    no romper flujos aún migrándose. La bandeja nueva ya los excluye
+    desde su query."""
+    from kyb.flags import kyb_enabled
+
+    async def dep(request: Request):
+        if not kyb_enabled():
+            return
+        base = "/api/v1/admin/compliance/kyb/cases"
+        cid = request.path_params.get("case_id")
+        if mode == "/cases":
+            raise HTTPException(308, headers={"Location": base})
+        if cid:
+            row = await col(KYB_CASES).find_one(
+                {"case_id": cid, "verification_modes": {"$exists": True}},
+                {"_id": 1})
+            if not row:
+                return  # legacy case → pasa al handler legacy
+        if mode == "/cases/{id}":
+            raise HTTPException(308, headers={"Location": f"{base}/{cid}"})
+        raise HTTPException(410, "Endpoint legacy retirado: usá "
+                                 f"{base}/{cid}/sections/*/review, "
+                                 f"{base}/{cid}/approve, /reject o "
+                                 "/request-info")
+    return dep
+
+
 @router.get("/queue")
 async def kyb_queue(
+        _retired=Depends(_legacy_retired_redirect("/cases")),
     status: Optional[List[str]] = Query(None),
     _: CurrentUser = Depends(require_compliance),
 ):
-    q: dict = {"is_deleted": False}
+    # Fase 2.1: esta bandeja solo entiende el shape legacy. Los casos
+    # del módulo KYB nuevo (siempre llevan `verification_modes`) se
+    # gestionan desde la bandeja nueva y acá se excluyen.
+    q: dict = {"is_deleted": False, "verification_modes": {"$exists": False}}
     if status: q["status"] = {"$in": status}
     items = await col(KYB_CASES).find(q, {"_id": 0}).sort("applied_at", -1).to_list(200)
     now = datetime.now(timezone.utc)
@@ -47,9 +85,27 @@ async def kyb_queue(
     return {"items": items, "total": len(items)}
 
 
+NEW_MODEL_ERROR = ("Este expediente pertenece al módulo KYB nuevo y se "
+                   "gestiona desde la bandeja nueva de revisión, no desde "
+                   "esta pantalla legacy.")
+
+
+async def _reject_if_new_model(case_id: str) -> None:
+    """409 explícito si el case_id es del modelo nuevo — un 404 sobre un
+    caso que existe manda a buscar un problema que no está."""
+    row = await col(KYB_CASES).find_one(
+        {"case_id": case_id, "verification_modes": {"$exists": True}},
+        {"_id": 1})
+    if row:
+        raise HTTPException(409, NEW_MODEL_ERROR)
+
+
 @router.get("/{case_id}")
-async def kyb_detail(case_id: str, _: CurrentUser = Depends(require_compliance)):
-    doc = await col(KYB_CASES).find_one({"case_id": case_id, "is_deleted": False}, {"_id": 0})
+async def kyb_detail(case_id: str, _: CurrentUser = Depends(require_compliance),
+                     _retired=Depends(_legacy_retired_redirect("/cases/{id}"))):
+    doc = await col(KYB_CASES).find_one(
+        {"case_id": case_id, "is_deleted": False,
+         "verification_modes": {"$exists": False}}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Not found")
     items_checked = sum(1 for c in (doc.get("checklist") or []) if c.get("checked"))
@@ -66,7 +122,9 @@ class ChecklistPatch(BaseModel):
 
 @router.patch("/{case_id}/checklist")
 async def kyb_patch_checklist(case_id: str, body: ChecklistPatch,
+                              _retired=Depends(_legacy_retired_redirect("gone")),
                                user: CurrentUser = Depends(require_compliance_decide)):
+    await _reject_if_new_model(case_id)
     doc = await col(KYB_CASES).find_one({"case_id": case_id, "is_deleted": False})
     if not doc:
         raise HTTPException(404, "Not found")
@@ -103,7 +161,9 @@ class KybDecision(BaseModel):
 
 @router.post("/{case_id}/decision")
 async def kyb_decide(case_id: str, body: KybDecision,
+                     _retired=Depends(_legacy_retired_redirect("gone")),
                       user: CurrentUser = Depends(require_compliance_decide)):
+    await _reject_if_new_model(case_id)
     doc = await col(KYB_CASES).find_one({"case_id": case_id, "is_deleted": False})
     if not doc:
         raise HTTPException(404, "Not found")

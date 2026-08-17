@@ -14,7 +14,34 @@ const SLA_TONE: Record<string, string> = {
   red:   "text-danger  border-danger/40  bg-danger/10",
 };
 
+import { KybTray } from "./tray";
 export default function KybPage() {
+  // F6: con el módulo nuevo encendido, la bandeja nueva reemplaza a la
+  // legacy en esta misma ruta (el banner legacy de la Fase 0 se va con
+  // ella). Con el flag apagado, todo sigue exactamente como hoy.
+  if (process.env.NEXT_PUBLIC_KYB_MODULE_ENABLED === "true")
+    return <KybNewTrayPage />;
+  return <KybLegacyPage />;
+}
+
+function KybNewTrayPage() {
+  return (
+    <div className="p-6" data-testid="kyb-new-tray-page">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-xl font-semibold text-fg">KYB — Bandeja de casos</h1>
+        <div className="flex gap-3 text-xs" data-testid="kyb-module-links">
+          <a href="/admin/compliance/kyb/settings" className="text-primary hover:underline"
+             data-testid="kyb-settings-link">Modos de verificación</a>
+          <a href="/admin/compliance/kyb/templates" className="text-primary hover:underline"
+             data-testid="kyb-templates-link">Plantillas de checklist</a>
+        </div>
+      </div>
+      <KybTray />
+    </div>
+  );
+}
+
+function KybLegacyPage() {
   const tH = useTranslations("admin.headers");
   const tA = useTranslations("admin");
   const queue = useKybQueue();
@@ -60,6 +87,24 @@ export default function KybPage() {
 
   return (
     <div data-testid="compl-kyb-page">
+      {/* PRELIMINARY MODULE BANNER — Fase 0 (Aug 2026)
+          This bandeja does NOT run any external verification. It is a
+          register of administrative decisions, NOT a compliance
+          verification. Must remain visible while KYB_MODULE_ENABLED is
+          off — do not make it dismissible. */}
+      <div role="alert" data-testid="kyb-preliminary-banner"
+           className="mb-4 rounded-md border-2 border-warning bg-warning/10 p-4">
+        <p className="font-display font-bold text-sm text-warning-fg mb-1">
+          Módulo preliminar
+        </p>
+        <p className="text-xs text-fg leading-relaxed">
+          Esta bandeja no ejecuta verificación externa: no consulta listas
+          de sanciones, no valida documentación societaria ni verifica
+          identidad. Las decisiones tomadas acá son registros
+          administrativos, no verificaciones de cumplimiento.
+        </p>
+      </div>
+
       <PageHeader
         breadcrumbs={[{ label: tA("breadcrumb_admin"), href: "/admin" },
                       { label: tH("comp_label"), href: "/admin/compliance" },
@@ -220,6 +265,19 @@ function KybDrawer({ caseId, onClose, onChanged, onDecided }:
             <section>
               <h3 className="text-[10px] font-mono uppercase tracking-[0.18em] text-fg-subtle mb-2">
                 Decisión</h3>
+              {/* PRELIMINARY MODULE BANNER — Fase 0 (Aug 2026) — see top of page */}
+              <div role="alert" data-testid="kyb-decision-banner"
+                   className="mb-3 rounded-md border-2 border-warning bg-warning/10 p-3">
+                <p className="font-display font-bold text-[11px] text-warning-fg mb-1">
+                  Módulo preliminar
+                </p>
+                <p className="text-[11px] text-fg leading-relaxed">
+                  Esta decisión NO ejecuta verificación externa: no consulta
+                  listas de sanciones, no valida documentación societaria ni
+                  verifica identidad. Es un registro administrativo, no una
+                  verificación de cumplimiento.
+                </p>
+              </div>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {(["approve", "reject", "request_info"] as const).map((a) => {
                   const disabled = a === "approve" && !ready;

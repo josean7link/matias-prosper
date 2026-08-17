@@ -30,8 +30,14 @@ async def client_me(user: CurrentUser = Depends(get_current_user)):
 
     # ---- Onboarding progress (derived from KybCase if any) ----
     kyb_status = org.get("kyb_status") or "pending"
+    # Fase 2.1 — esta pantalla solo entiende el shape legacy (checklist/
+    # documents). Los casos del módulo KYB nuevo llevan SIEMPRE
+    # `verification_modes` (seteado por el modelo en signup y en la
+    # migración): se excluyen acá para que un caso `draft` del alta
+    # autogestionada no se muestre como progreso de onboarding legacy.
     case = await col(KYB_CASES).find_one(
-        {"org_id": user.org_id, "is_deleted": False},
+        {"org_id": user.org_id, "is_deleted": False,
+         "verification_modes": {"$exists": False}},
         {"_id": 0, "checklist": 1, "documents": 1, "status": 1},
         sort=[("created_at", -1)])
 

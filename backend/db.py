@@ -27,6 +27,9 @@ APPROVALS        = "approvals"
 NAV_SNAPSHOTS    = "nav_snapshots"
 ONBOARDING_APPLICATIONS = "onboarding_applications"
 WEBHOOK_EVENTS   = "webhook_events"
+# Phase 5b hardening — canal AiPrise KYB corporativo neutralizado
+# (log-and-drop). Ver routes/webhooks_aiprise.py::_apply_kyb_decision.
+WEBHOOK_KYB_DROPPED_EVENTS = "webhook_kyb_dropped_events"
 # Phase 5 — Compliance
 KYT_RULES        = "kyt_rules"
 KYT_ALERTS       = "kyt_alerts"
@@ -150,6 +153,34 @@ async def ensure_indexes():
     await col(AUDIT_LOGS).create_index("actor_user_id")
     await col(AUDIT_LOGS).create_index("resource_id")
 
+    # Phase 5b hardening — dropped-webhook registry (AiPrise KYB corporativo
+    # neutralizado). Consultable por org_id/session_id/received_at.
+    await col(WEBHOOK_KYB_DROPPED_EVENTS).create_index("received_at")
+    await col(WEBHOOK_KYB_DROPPED_EVENTS).create_index("org_id", sparse=True)
+    await col(WEBHOOK_KYB_DROPPED_EVENTS).create_index("session_id", sparse=True)
+
+    # Fase 0.5 (Aug 2026) — email idempotency. Partial unique index so
+    # rows without an idempotency key (legacy callers) do NOT collide
+    # with each other, and rows WITH a key can never be duplicated.
+    try:
+        await col(OUTBOUND_EMAILS).create_index(
+            "idempotency_key", unique=True,
+            partialFilterExpression={"idempotency_key": {"$type": "string"}},
+            name="outbound_emails_idempotency_key_unique")
+    except Exception:
+        pass  # index already present with same shape
+
+    # Fase 0.5.1 — signed-file tokens: TTL index on `expires_at` (BSON
+    # Date, expireAfterSeconds=0) so expired tokens purge themselves.
+    # Logical expiry is still enforced in consume_access_token; the TTL
+    # is cleanup, not the auth boundary.
+    try:
+        await col("file_access_tokens").create_index(
+            "expires_at", expireAfterSeconds=0,
+            name="file_access_tokens_expires_ttl")
+    except Exception:
+        pass  # index already present with same shape
+
     # Phase 13 — Ramp provider abstraction
     await col(RAMP_PROVIDER_CONFIG).create_index("scope", unique=True, sparse=True)
     await col(RAMP_ACCOUNTS).create_index([("org_id", 1), ("end_customer_id", 1)],
@@ -226,6 +257,13 @@ async def ensure_indexes():
     await col(DEPOSIT_EVENTS).create_index("event_id", unique=True)
     await col(DEPOSIT_EVENTS).create_index([("created_at", -1)])
     await col(DEPOSIT_EVENTS).create_index([("deposit_id", 1), ("asset", 1)])
+
+    # Fase 1 KYB — módulo corporativo detrás de flag. Con
+    # KYB_MODULE_ENABLED apagado no se crea ni un índice.
+    from kyb.flags import kyb_enabled
+    if kyb_enabled():
+        from kyb.db_setup import ensure_kyb_indexes
+        await ensure_kyb_indexes()
 
 
 # ---------------------------------------------------------------------------

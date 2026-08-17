@@ -26,19 +26,19 @@ Endpoints (all scoped to the authenticated user's own org/user):
   - POST   /v1/client/account/cancel-deletion
 """
 from __future__ import annotations
-import base64, io, os, secrets as _s, hashlib
+import base64, io, secrets as _s, hashlib
 from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
 import pyotp, qrcode
 import bcrypt
-from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from audit import log_action
 from auth import CurrentUser, get_current_user
 from db import col, ORGANIZATIONS, SESSIONS, USERS
+from services.secret_box import SecretBox, SecretBoxError
 
 router = APIRouter(prefix="/client", tags=["client-profile"])
 
@@ -48,24 +48,26 @@ def _iso_now() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Helpers: Fernet for TOTP secret at rest + bcrypt for backup codes
+# Helpers: TOTP secret at rest (SecretBox) + bcrypt for backup codes
+#
+# Fase 0.5.1: the dual-key Fernet logic (current + previous key, needed so
+# a rotation does not break users with `mfa_pending`) now lives in
+# `services/secret_box.py`. This route only maps SecretBoxError → HTTP 500.
 # ---------------------------------------------------------------------------
-def _cipher() -> Fernet:
-    key = os.environ.get("MFA_FERNET_KEY")
-    if not key:
-        # Fail loud — secret-at-rest must always be configured
-        raise HTTPException(500, "MFA_FERNET_KEY not configured")
-    return Fernet(key.encode() if isinstance(key, str) else key)
+_MFA_BOX = SecretBox("MFA_FERNET_KEY", "MFA_FERNET_KEY_PREVIOUS")
 
 
 def _encrypt(plaintext: str) -> str:
-    return _cipher().encrypt(plaintext.encode()).decode()
+    try:
+        return _MFA_BOX.encrypt(plaintext)
+    except SecretBoxError as e:
+        raise HTTPException(500, str(e))
 
 
 def _decrypt(ciphertext: str) -> str:
     try:
-        return _cipher().decrypt(ciphertext.encode()).decode()
-    except InvalidToken:
+        return _MFA_BOX.decrypt(ciphertext)
+    except SecretBoxError:
         raise HTTPException(500, "Failed to decrypt MFA secret")
 
 

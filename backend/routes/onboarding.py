@@ -122,12 +122,18 @@ def _public_base_url(req: Request) -> str:
 async def submit_application(body: ApplicationIn, request: Request):
     """Public — submit a new onboarding application.
 
-    Two modes:
-      * `applicant_type='business'` (default): KYB flow, UBOs required.
-      * `applicant_type='individual'`:        KYC flow, no UBOs. Org is
-        marked `type='personal'`, treated as a single-person entity.
+    Only `applicant_type='individual'` is served. Corporate onboarding
+    (`applicant_type='business'`) is handled by the KYB module via
+    invitation; the endpoint returns 410 Gone with a message aligned
+    with the public /apply form notice.
     """
     is_individual = body.applicant_type == "individual"
+    if not is_individual:
+        raise HTTPException(
+            status_code=410,
+            detail=("El alta de empresas se realiza por invitación. "
+                    "Escribí a support@prosper.foundation para recibir "
+                    "el enlace y comenzar el proceso."))
     org_id = new_id("org")
     app_id = new_id("app")
     user_id = new_id("usr")
@@ -255,6 +261,12 @@ async def submit_application(body: ApplicationIn, request: Request):
                 callback_url=callback,
                 redirect_uri=redirect,
             )
+        except aiprise.ProviderMisconfigured as e:
+            # Fail-safe en producción: template_id / api_key ausentes o
+            # modo simulator forzado en prod. Ver aiprise.is_simulated_async.
+            logger.error("AiPrise misconfigured in production: %s", e)
+            raise HTTPException(503, "KYB verification provider not "
+                                     "available. Please retry later.")
         except aiprise.AipriseError as e:
             logger.exception("AiPrise verification creation failed")
             raise HTTPException(502, f"KYB provider error: {e.body}")
@@ -277,6 +289,11 @@ async def submit_application(body: ApplicationIn, request: Request):
     magic_link = (f"{base}/api/v1/auth/dev-login"
                    f"?email={body.contact_email}&next=/client")
     resend_live = bool(os.environ.get("RESEND_API_KEY"))
+    # Opción C: en producción, nunca devolvemos el magic-link en el body,
+    # sin importar RESEND. Si el operador olvidó RESEND_API_KEY en prod,
+    # eso no debe habilitar un login sin contraseña por respuesta HTTP.
+    from kyb.verification_modes import kyb_environment
+    force_hide_magic = kyb_environment() == "production"
     if resend_live:
         try:
             from integrations.email_sender import _shell, send_email
@@ -302,7 +319,7 @@ async def submit_application(body: ApplicationIn, request: Request):
         # Don't leak the dev magic-link in production
         magic_link_for_resp = None
     else:
-        magic_link_for_resp = magic_link
+        magic_link_for_resp = None if force_hide_magic else magic_link
 
     # 6. Audit
     await log_action(actor=None, action="application.submitted",
@@ -363,42 +380,13 @@ async def get_application(app_id: str):
 
 
 # ---------------------------------------------------------------------------
-# POST /onboarding/apply/simulate — DEV ONLY when sim mode active
-# Allows the user clicking the simulator hosted_url to "complete" the flow
-# without AiPrise being configured. Stripe-style local development helper.
+# POST /onboarding/apply/simulate — RETIRADO en la Fase 1 del retiro de
+# AiPrise. La ruta ya no está montada en el router: FastAPI devuelve
+# 404 Not Found opaco a cualquier request. Motivación: el simulator
+# reusaba `_apply_kyb_decision` que fue neutralizado (log-and-drop) y
+# el frontend legacy que lo consumía (`app/apply/simulate/page.tsx`)
+# también fue retirado.
 # ---------------------------------------------------------------------------
-class SimulateIn(BaseModel):
-    session_id: str
-    decision: str  # "approved" | "rejected" | "pending_review"
-
-
-@router.post("/apply/simulate")
-async def simulate_decision(body: SimulateIn):
-    if body.session_id.startswith("sim_") is False:
-        raise HTTPException(400, "Only simulated sessions are accepted here")
-    if body.decision not in ("approved", "rejected", "pending_review"):
-        raise HTTPException(400, "Invalid decision")
-
-    # KYC simulator sessions are prefixed `sim_kyc_…`; KYB ones `sim_kyb_…`.
-    # Route to the matching webhook handler so audit + side-effects (Prosper
-    # wallet + Andes ramp provisioning) fire consistently.
-    if body.session_id.startswith("sim_kyc_"):
-        # Phase 22+ — Andes is the only source of truth for individual KYC.
-        # The AiPrise KYC simulator path is dead for personal orgs. QA must
-        # use the real Andes sandbox via `/apply/{app_id}/kyc-docs` or the
-        # widget at `/client/kyc-docs`. We refuse to create a second
-        # activation path that doesn't exist in prod.
-        raise HTTPException(
-            400,
-            "AiPrise KYC simulator deprecated for personal: use the Andes "
-            "path via /apply/{app_id}/kyc-docs (or the /client/kyc-docs "
-            "widget) with real files against the Andes sandbox.")
-
-    from routes.webhooks_aiprise import _apply_kyb_decision
-    return await _apply_kyb_decision(session_id=body.session_id,
-                                     decision=body.decision,
-                                     raw_payload={"simulated": True,
-                                                  "decision": body.decision})
 
 
 # ---------------------------------------------------------------------------
@@ -413,41 +401,15 @@ class KycStartOut(BaseModel):
 
 @router.post("/me/kyc", response_model=KycStartOut)
 async def start_my_kyc(request: Request, user: CurrentUser = Depends(get_current_user)):
-    user_doc = await col(USERS).find_one({"user_id": user.user_id}, {"_id": 0})
-    if not user_doc:
-        raise HTTPException(404, "User not found")
-    if user_doc.get("kyc_status") == "approved":
-        return KycStartOut(user_id=user.user_id, kyc_status="approved",
-                           hosted_url=None, mode="skipped")
-
-    base = _public_base_url(request)
-    callback = f"{base}/api/v1/webhooks/aiprise/kyc"
-    redirect = f"{base}/client/verify-identity?status=complete"
-    try:
-        ai = await aiprise.create_user_verification(
-            client_reference_id=user.user_id,
-            user_data={"email": user.email},
-            callback_url=callback,
-            redirect_uri=redirect,
-        )
-    except aiprise.AipriseError as e:
-        raise HTTPException(502, f"KYC provider error: {e.body}")
-
-    await col(USERS).update_one(
-        {"user_id": user.user_id},
-        {"$set": {
-            "kyc_status": "in_review",
-            "kyc_session_id": ai["verification_session_id"],
-            "kyc_mode": ai.get("mode"),
-            "updated_at": utc_now(),
-        }},
-    )
-    await log_action(actor=user, action="kyc.started",
-                     resource_type="user", resource_id=user.user_id,
-                     metadata={"mode": ai.get("mode")})
-
-    return KycStartOut(user_id=user.user_id, kyc_status="in_review",
-                       hosted_url=ai["hosted_url"], mode=ai.get("mode", "live"))
+    """Retired — la verificación de identidad individual se resuelve por
+    el path Andes (`POST /onboarding/{app_id}/kyc-docs` y el widget en
+    `/client/kyc-docs`). Cerrado con 410 Gone; ningún flujo real
+    dependía de esta ruta."""
+    raise HTTPException(
+        status_code=410,
+        detail=("La verificación de identidad se realiza subiendo "
+                "documentación desde tu cuenta. Ingresá a "
+                "/client/kyc-docs para continuar."))
 
 
 # ---------------------------------------------------------------------------

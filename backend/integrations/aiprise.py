@@ -29,6 +29,14 @@ SANDBOX_BASE_URL = "https://api-sandbox.aiprise.com/api/v1"
 PROD_BASE_URL    = "https://api.aiprise.com/api/v1"
 
 
+class ProviderMisconfigured(RuntimeError):
+    """Levantada cuando el ambiente es producción y falta configuración
+    crítica (template_id / api_key / modo forzado a simulado). El caller
+    debe traducirla a HTTP 503. Evita el vector histórico en el que la
+    ausencia de credenciales en prod desviaba silenciosamente al
+    simulador."""
+
+
 def _env() -> str:
     return os.environ.get("AIPRISE_ENVIRONMENT", "sandbox").lower()
 
@@ -82,13 +90,34 @@ async def kyc_provider_mode() -> str:
 
 async def is_simulated_async(kind: Literal["kyc", "kyb"]) -> bool:
     """Async variant — honors the super_admin toggle in Mongo + falls back
-    to the credential-presence check."""
+    to the credential-presence check.
+
+    Fail-safe en producción: si el ambiente es `production` y falta el
+    template_id o la API key, NO caemos al simulador — subimos
+    `ProviderMisconfigured` para que el caller (p.ej. /onboarding/apply)
+    devuelva 503. Esto cierra el vector histórico en el que un template
+    vacío en prod habilitaba una vía sin credenciales para autoaprobar
+    orgs. Compañero del bloqueo por-construcción de /apply/simulate en
+    prod (routes/onboarding.py:376)."""
+    from kyb.verification_modes import kyb_environment
     mode = await kyc_provider_mode()
     if mode == "simulated":
+        # Toggle Mongo explícito. En prod, prohibido: no arrastrar el
+        # riesgo si un super_admin lo dejó puesto por error.
+        if kyb_environment() == "production":
+            raise ProviderMisconfigured(
+                "AiPrise en modo 'simulated' no está permitido en "
+                "producción. Cambiar el toggle en integration_settings.")
         return True
-    # mode is real (sandbox/production); if creds are missing, degrade.
+    # mode is real (sandbox/production); if creds are missing, degrade —
+    # excepto en producción, donde fallamos duro.
     tid = kyc_template_id() if kind == "kyc" else kyb_template_id()
     if not tid or not api_key():
+        if kyb_environment() == "production":
+            raise ProviderMisconfigured(
+                f"AiPrise {kind.upper()} sin template_id/api_key en "
+                "producción — fallback simulator deshabilitado. "
+                "Cargar credenciales.")
         logger.warning("[AIPRISE] mode=%s but %s template_id/api_key missing — "
                           "falling back to simulator. Cargar credenciales.",
                           mode, kind.upper())

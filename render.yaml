@@ -136,6 +136,14 @@ services:
       - key: GATEWAY_INTERNAL_TOKEN
         sync: false          # Debe ser IDÉNTICO al que se setea en prosper-andes-gateway
 
+      # ── Fase 1/5b KYB — módulo nuevo (Sumsub + SecretBox), apagado en
+      # este deploy hasta revisión (traído por prosper-clean-export3,
+      # 2026-08-17). Con el flag off no se registra ninguna ruta /kyb/*,
+      # no corre el scheduler, y sumsub_startup_check nunca se invoca —
+      # no hace falta ninguna otra var de Sumsub/Fernet para bootear.
+      - key: KYB_MODULE_ENABLED
+        value: "false"
+
       # ── Phase 02 — Deposit Detection Engine: apagado en este deploy ────
       # (ver ANALISIS_PROSPER_PROJECT.md / DEPLOY_ADAPTATION.md — falta
       # wiring del scheduler en server.py, no lo prendemos a ciegas)

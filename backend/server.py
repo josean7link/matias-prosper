@@ -200,6 +200,19 @@ async def startup():
     await ensure_default_provider_config()
     from jobs.accrual import start_scheduler
     start_scheduler()
+    # F8 — scheduler KYB (expiración + expiring + SLA manual). Registro
+    # SOLO si el módulo KYB está activo.
+    from kyb.flags import kyb_enabled as _kyb_flag_startup
+    if _kyb_flag_startup():
+        from kyb.jobs_scheduler import start_kyb_scheduler
+        start_kyb_scheduler()
+        # Fase 5b — validación de config de Sumsub. Si SUMSUB_ENVIRONMENT
+        # está mal seteado o faltan credenciales productivas cuando
+        # corresponde, esta llamada tira RuntimeError y el backend NO
+        # arranca. El resultado (env + status + warning) queda expuesto
+        # en /health y en /api/v1/status.
+        from kyb.providers.sumsub import sumsub_startup_check
+        app.state.sumsub_health = await sumsub_startup_check()
 
     # Phase 03 — Wire deposit.credited subscriber. Idempotent: if startup
     # runs twice (tests + dev reloader), subscribe() dedupes by handler.
@@ -430,8 +443,25 @@ def _safe_next(req_next: str, role: Role) -> str:
 
 @v1.get("/auth/dev-login")
 async def dev_login(email: str, request: Request, next: str = ""):
-    if not DEMO_MODE:
-        raise HTTPException(404, "Not found")  # disabled outside demo mode
+    # Fail-safe estricto: fuera de sandbox esta ruta responde 404 opaco.
+    # DEMO_MODE por sí solo es débil (default true si el operador olvida
+    # setearlo), por eso se combina con kyb_environment() — mismo
+    # criterio que /apply/simulate (routes/onboarding.py:376).
+    #
+    # Escape SÓLO bajo pytest: `PYTEST_CURRENT_TEST` es una env-var que
+    # pytest inyecta automáticamente en cada corrida de test (formato
+    # `path/test_foo.py::test_bar (setup)`). Un proceso de producción
+    # jamás la tiene — no viene del deploy, del `.env`, ni de la config
+    # del cluster. Se preserva al pasar `{**os.environ, ...}` al
+    # `subprocess.Popen(env=...)` que los tests usan para arrancar
+    # uvicorn efímeros. Ninguna combinación de env-vars operacionales
+    # puede habilitar este endpoint en un servidor real; sólo levantar
+    # el proceso vía `pytest` lo habilita.
+    from kyb.verification_modes import kyb_environment
+    under_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+    prod_gate_on = kyb_environment() == "production" and not under_pytest
+    if prod_gate_on or not DEMO_MODE:
+        raise HTTPException(404, "Not Found")
     email = email.lower().strip()
 
     user_doc = await col(USERS).find_one({"email": email}, {"_id": 0})
@@ -619,12 +649,43 @@ async def audit_delete_blocked(audit_id: str,
 # ---------------------------------------------------------------------------
 @api.get("/health")
 async def health():
-    return {"ok": True, "service": "prosper-api", "version": app.version}
+    body = {"ok": True, "service": "prosper-api", "version": app.version}
+    # Fase 5b — status del provider Sumsub. NUNCA credenciales.
+    sumsub = getattr(app.state, "sumsub_health", None)
+    if sumsub:
+        body["sumsub"] = {"environment": sumsub.get("environment"),
+                          "status": sumsub.get("status"),
+                          "warning": sumsub.get("warning")}
+    return body
 
 
 api.include_router(v1)
 api.include_router(dashboard_router, prefix="/v1")
 api.include_router(onboarding_router, prefix="/v1")
+# Fase 5a: el router admin de verificación manual se registra ANTES que
+# el compliance legacy — ese router tiene GET /{case_id} catch-all bajo el
+# mismo prefijo y se comería las rutas literales nuevas. Con el flag off
+# no se registra nada y el orden queda como hoy.
+from kyb.flags import kyb_enabled as _kyb_enabled_admin  # noqa: E402
+if _kyb_enabled_admin():
+    from kyb.routes_admin_checks import router as kyb_admin_checks_router  # noqa: E402
+    from kyb.routes_admin_cases import router as kyb_admin_cases_router  # noqa: E402
+    from kyb.routes_admin_jobs import router as kyb_admin_jobs_router  # noqa: E402
+    from kyb.routes_providers import router as kyb_providers_router  # noqa: E402
+    from kyb.routes_risk_model import router as kyb_risk_model_router  # noqa: E402
+    from kyb.routes_shared_links import (admin_router as kyb_shared_admin_router,
+                                         public_router as kyb_shared_public_router)  # noqa: E402
+    from kyb.routes_team import router as kyb_team_router  # noqa: E402
+    api.include_router(kyb_admin_cases_router, prefix="/v1")
+    api.include_router(kyb_admin_checks_router, prefix="/v1")
+    api.include_router(kyb_admin_jobs_router, prefix="/v1")
+    api.include_router(kyb_providers_router, prefix="/v1")
+    api.include_router(kyb_risk_model_router, prefix="/v1")
+    api.include_router(kyb_shared_admin_router, prefix="/v1")
+    api.include_router(kyb_shared_public_router, prefix="/v1")
+    api.include_router(kyb_team_router, prefix="/v1")
+    from kyb.webhooks_sumsub import router as kyb_sumsub_webhook_router
+    api.include_router(kyb_sumsub_webhook_router, prefix="/v1")
 api.include_router(compliance_router, prefix="/v1")
 api.include_router(operations_router, prefix="/v1")
 api.include_router(business_router, prefix="/v1")
@@ -661,4 +722,18 @@ api.include_router(admin_deposits_router, prefix="/v1")
 api.include_router(client_notifications_router, prefix="/v1")
 api.include_router(client_portfolio_router, prefix="/v1")
 api.include_router(admin_notifications_router, prefix="/v1")
+
+# Fase 0.5 (Aug 2026) — signed-URL file server for GridFS backend.
+from routes.files import router as files_router
+api.include_router(files_router, prefix="/v1")
+
+# Fase 2 KYB — signup pre-autenticado. Solo se registra con el flag on;
+# con KYB_MODULE_ENABLED=false ninguna ruta /api/v1/kyb/* existe.
+from kyb.flags import kyb_enabled as _kyb_enabled  # noqa: E402
+if _kyb_enabled():
+    from kyb.routes_signup import router as kyb_signup_router  # noqa: E402
+    from kyb.routes_case import router as kyb_case_router      # noqa: E402
+    api.include_router(kyb_signup_router, prefix="/v1")
+    api.include_router(kyb_case_router, prefix="/v1")
+
 app.include_router(api)
